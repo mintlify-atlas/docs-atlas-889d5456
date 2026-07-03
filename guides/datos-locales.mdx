@@ -1,0 +1,65 @@
+---
+title: "Archivos y carpetas locales de LEFA"
+sidebarTitle: "Datos locales"
+description: "Conoce qué archivos genera LEFA, dónde se guardan en tu sistema y cómo están organizados los datos locales en ~/.lefa."
+---
+
+LEFA no utiliza ningún servicio en la nube ni almacena información fuera de tu equipo. Todos los datos —facturas, clientes, configuración y PDFs— residen en una única carpeta local: `~/.lefa` en Linux y macOS, o `%USERPROFILE%\.lefa` en Windows. Esta carpeta se crea automáticamente en el primer arranque de la aplicación. Para hacer una copia de seguridad completa, basta con copiar esa carpeta a otro lugar.
+
+## Estructura de carpetas
+
+La carpeta `~/.lefa` contiene los siguientes archivos y subdirectorios:
+
+| Ruta | Constante en `config.py` | Descripción |
+|---|---|---|
+| `~/.lefa/` | `APP_DATA_DIR` | Directorio raíz de datos de LEFA |
+| `~/.lefa/lefa.db` | `DATABASE_PATH` | Base de datos SQLite principal |
+| `~/.lefa/facturas_pdf/` | `PDF_OUTPUT_DIR` | PDFs de facturas emitidas |
+| `~/.lefa/presupuestos_pdf/` | `PRESUPUESTOS_PDF_DIR` | PDFs de presupuestos emitidos |
+| `~/.lefa/facturas_xml/` | `FACTURAE_OUTPUT_DIR` | XMLs Facturae generados al emitir |
+| `~/.lefa/verifactu/registros/` | `VERIFACTU_REGISTROS_DIR` | Registros de la cadena VeriFactu (JSON) |
+| `~/.lefa/smtp_config.json` | `SMTP_CONFIG_PATH` | Configuración SMTP (sin contraseña) |
+| `~/.lefa/preferencias.json` | `PREFERENCIAS_PATH` | Preferencias generales de la aplicación |
+| _(llavero del sistema)_ | — | Contraseña SMTP (nunca en disco) |
+
+En Windows, sustituye `~` por la ruta de tu carpeta de usuario (`%USERPROFILE%`), por ejemplo `C:\Users\TuNombre\.lefa`.
+
+## Base de datos SQLite
+
+El archivo `lefa.db` es la base de datos principal de LEFA. Contiene todas las tablas de la aplicación: clientes, facturas, presupuestos, líneas de factura, servicios del catálogo, plantillas y registros VeriFactu vinculados a cada factura. LEFA gestiona este archivo a través de SQLAlchemy y garantiza la integridad de los datos mediante transacciones.
+
+<Note>
+No edites `lefa.db` directamente con un editor externo ni con herramientas como DB Browser for SQLite mientras LEFA está abierto. Podrías corromper los datos o romper la cadena de hashes VeriFactu, que es inmutable una vez generada. Si necesitas inspeccionar la base de datos, hazlo siempre con LEFA cerrado.
+</Note>
+
+Al primer arranque, si la base de datos está vacía, LEFA crea automáticamente tres clientes de ejemplo para facilitar las pruebas iniciales.
+
+## Archivos de configuración
+
+LEFA guarda su configuración en dos archivos JSON dentro de `~/.lefa`:
+
+**`preferencias.json`** almacena todas las preferencias configurables desde **Herramientas → Preferencias…**: datos del emisor, IVA e IRPF por defecto, vencimiento, series de facturación, formato de numeración, ruta del logotipo, pie de factura y carpeta de PDFs.
+
+**`smtp_config.json`** almacena los parámetros de conexión SMTP: servidor, puerto, modo de seguridad, usuario, dirección remitente y nombre remitente. La contraseña **no** se guarda en este archivo.
+
+Ambos archivos son JSON con formato legible por humanos (indentado a 2 espacios). Aunque pueden editarse con cualquier editor de texto, se recomienda hacerlo siempre desde la interfaz de LEFA para evitar errores de formato o valores inválidos.
+
+## Keyring (llavero del sistema)
+
+La contraseña de la cuenta SMTP se almacena exclusivamente en el llavero seguro del sistema operativo (GNOME Keyring en Linux con GNOME, KWallet en KDE, Windows Credential Manager en Windows). LEFA accede a ella a través de la biblioteca `keyring` usando el identificador de servicio `lefa-smtp`.
+
+<Warning>
+La contraseña SMTP **no se incluye** en el archivo ZIP que genera **Archivo → Crear copia de seguridad…** ni en una copia manual de la carpeta `~/.lefa`. Si restauras LEFA en otro equipo o en una cuenta de usuario diferente, tendrás que volver a introducir la contraseña en **Herramientas → Configurar correo electrónico…** una vez que hayas copiado los demás archivos.
+</Warning>
+
+## Cierre de la aplicación
+
+LEFA siempre cierra la base de datos de forma segura, independientemente de cómo se detenga. La tabla siguiente resume el comportamiento según la acción:
+
+| Acción | Comportamiento |
+|---|---|
+| **X** en la ventana (con bandeja activa) | Oculta la ventana; LEFA sigue ejecutándose en la bandeja del sistema. Muestra la notificación: *«LEFA sigue ejecutándose en la bandeja del sistema.»* |
+| **Archivo → Salir** | Cierra la aplicación por completo |
+| **Salir** desde el menú de la bandeja | Cierra la aplicación por completo |
+| **X** en la ventana (sin bandeja disponible) | Cierra la aplicación (comportamiento estándar de ventana) |
+| **Ctrl+C** en la terminal | Cierra la aplicación de forma segura |

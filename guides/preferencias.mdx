@@ -1,0 +1,91 @@
+---
+title: "Configurar preferencias y datos de emisor en LEFA"
+sidebarTitle: "Preferencias"
+description: "Configura IVA, IRPF, vencimientos, datos de la empresa emisora, series de facturación, formato de numeración y logotipo en LEFA."
+---
+
+Las preferencias de LEFA son el punto de partida antes de emitir la primera factura. Desde **Herramientas → Preferencias…** puedes definir los valores que se aplican automáticamente a cada nueva factura (impuestos, vencimiento, serie), los datos que aparecen en el PDF como emisor (nombre, NIF, dirección) y opciones de presentación como el logotipo o el pie de página. Todos los cambios se guardan en `~/.lefa/preferencias.json` de forma inmediata al pulsar **Guardar**.
+
+## Datos de la empresa emisora
+
+El bloque **Empresa emisora** contiene la información que aparece en la cabecera de cada factura PDF y en el XML Facturae. Rellena estos campos con los datos reales de tu actividad como autónomo o empresa.
+
+| Campo en la interfaz | Campo interno | Descripción |
+|---|---|---|
+| Nombre | `emisor_razon_social` | Razón social o nombre y apellidos del autónomo |
+| NIF/CIF | `emisor_cif` | NIF del autónomo o CIF de la empresa |
+| Dirección | `emisor_direccion` | Dirección fiscal completa (calle, código postal, ciudad) |
+| Teléfono | `emisor_telefono` | Teléfono de contacto (aparece en el PDF) |
+| Email | `emisor_email` | Correo de contacto del emisor (no es la cuenta SMTP de envío) |
+| IBAN | `emisor_iban` | Número de cuenta bancaria en formato ES00 0000… |
+
+<Note>
+El campo **IBAN** es obligatorio para generar un XML Facturae válido para FACe (Punto General de Entrada de Facturas de la Administración). Sin él, la plataforma del Estado rechazará el fichero aunque el resto del XML esté bien formado.
+</Note>
+
+## Impuestos y vencimiento por defecto
+
+Estos valores se precargan automáticamente cada vez que abres la pestaña **Nueva Factura**. Puedes cambiarlos factura a factura sin necesidad de volver a las preferencias.
+
+| Campo | Campo interno | Opciones disponibles | Valor por defecto |
+|---|---|---|---|
+| IVA por defecto | `iva_porcentaje` | 21 %, 10 %, 4 %, 0 % | 21 % |
+| IRPF por defecto | `irpf_porcentaje` | 15 %, 7 %, 0 % | 15 % |
+| Vencimiento por defecto | `dias_vencimiento` | 0 – 365 días | 30 días |
+
+Los tipos disponibles (definidos en `config.py` como `IVA_OPCIONES` y `IRPF_OPCIONES`) corresponden a los tramos habituales del IVA español y a las retenciones de IRPF más comunes para profesionales. El valor **0** en días de vencimiento deja la factura sin fecha de vencimiento automática.
+
+## Numeración de facturas
+
+LEFA genera el número de cada factura combinando la serie, el año y un correlativo. Puedes controlar exactamente cómo queda ese número mediante dos parámetros:
+
+**Formato de numeración** (`formato_numeracion`): determina la estructura visual del número. Algunos ejemplos:
+
+| Ejemplo de número | Descripción del formato |
+|---|---|
+| `FACT-2026-0001` | Serie + año + correlativo con guiones |
+| `2026-001` | Año + correlativo corto |
+| `0001/2026` | Correlativo + año con barra |
+| `WEB-001` | Solo serie + correlativo (sin año) |
+
+**Dígitos del correlativo** (`digitos_secuencia`): número de cifras del contador (entre 2 y 6). Con 4 dígitos, la primera factura del año es `0001`; con 6 sería `000001`.
+
+**Series de facturación** (`series_facturacion`): lista de series separadas por comas. Cada serie lleva su propio contador independiente, lo que permite distinguir, por ejemplo, facturas de distintas líneas de negocio.
+
+| Campo en la interfaz | Campo interno | Ejemplo de valor |
+|---|---|---|
+| Series de facturación | `series_facturacion` | `FACT, WEB, MANT` |
+| Dígitos correlativo | `digitos_secuencia` | `4` |
+| Formato de número | `formato_numeracion` | `fact_anio_4` |
+
+Las series por defecto en LEFA son `FACT`, `PRES`, `PROFORMA` y `RECT`. La serie `RECT` se usa automáticamente para facturas rectificativas.
+
+## Logotipo en PDF
+
+El campo **Logotipo (PDF)** (`ruta_logotipo`) permite indicar la ruta a un archivo de imagen (`.png`, `.jpg` o `.jpeg`) que se mostrará en la cabecera del PDF generado al emitir una factura. Si se deja vacío, LEFA usa el archivo `img/logo.png` del propio proyecto.
+
+Este campo **no cambia el icono de la ventana ni de la bandeja del sistema**; solo afecta al aspecto del PDF de la factura.
+
+Usa el botón **…** junto al campo para abrir el selector de archivos del sistema operativo y localizar la imagen fácilmente.
+
+## Pie de factura
+
+El campo **Pie de factura (PDF)** (`pie_factura`) admite texto libre (puede ocupar varias líneas) que se imprime al final de cada factura PDF. Es útil para incluir información adicional como datos bancarios alternativos, condiciones de pago o cualquier aviso legal que quieras que aparezca en todos los documentos.
+
+Si se deja vacío, no se imprime ningún pie.
+
+## Carpeta de PDFs
+
+El campo **Carpeta PDFs** (`carpeta_pdf`) define el directorio donde LEFA guarda los archivos PDF generados al emitir facturas. Si se deja vacío, LEFA usa la carpeta por defecto `~/.lefa/facturas_pdf/`.
+
+Usa el botón **…** para seleccionar cualquier carpeta del sistema. La carpeta se crea automáticamente si no existe al guardar una factura.
+
+## Forma de pago Facturae
+
+El campo **Forma de pago Facturae** (`facturae_forma_pago`) define el código de medio de pago que se incluye en el XML Facturae. El valor por defecto es `04`, que corresponde a transferencia bancaria según el estándar Facturae.
+
+| Código | Medio de pago |
+|---|---|
+| `04` | Transferencia bancaria (valor por defecto) |
+
+Este valor puede sobreescribirse factura a factura desde la ficha del cliente si este requiere un código distinto (por ejemplo, administraciones públicas con condiciones específicas).

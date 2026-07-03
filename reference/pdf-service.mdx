@@ -1,0 +1,172 @@
+---
+title: "PdfService y PresupuestoPdfService: generación de PDFs en LEFA"
+sidebarTitle: "PDF Service"
+description: "Referencia de PdfService y PresupuestoPdfService en LEFA: generación de PDFs de facturas y presupuestos con FPDF2, QR tributario y logo."
+---
+
+LEFA genera documentos PDF de forma nativa usando la biblioteca **FPDF2**, sin dependencias de navegador ni LaTeX. El módulo `PDFService` gestiona los PDFs de facturas —incluyendo el código QR tributario exigido por la normativa VeriFactu— mientras que `PresupuestoPDFService` produce los PDFs de presupuestos, más sencillos al no requerir QR ni registro fiscal. Ambos servicios leen las preferencias del emisor (razón social, CIF, dirección, IBAN, logotipo y pie de página) en tiempo de generación, por lo que cualquier cambio en las preferencias se refleja en el siguiente PDF generado. La generación se delega en hilos de fondo (`pdf_worker.py` y `presupuesto_pdf_worker.py`) para no bloquear la interfaz PyQt6.
+
+---
+
+## Directorios de salida
+
+| Servicio | Directorio por defecto |
+|---|---|
+| `PDFService` (facturas) | `~/.lefa/facturas_pdf/` |
+| `PresupuestoPDFService` (presupuestos) | `~/.lefa/presupuestos_pdf/` |
+
+Los directorios se crean automáticamente si no existen al llamar a `ensure_directories()` al inicio de cada método `generar`.
+
+---
+
+## `PDFService`
+
+Construye documentos PDF profesionales a partir de un objeto `Factura` ORM. El renderizado es completamente nativo con fuentes Helvetica (fuente core de FPDF2) con normalización de caracteres Unicode problemáticos (em-dash, en-dash, signo menos) para garantizar compatibilidad.
+
+### `generar`
+
+```python
+PDFService.generar(factura: Factura) -> Path
+```
+
+Genera el PDF completo de una factura y lo guarda en el directorio de facturas. El nombre del archivo depende del estado de la factura:
+
+- **Borrador:** `BORRADOR_{id}.pdf`
+- **Emitida / Cobrada:** `{numero_factura}.pdf` (con `/` sustituido por `-`)
+
+El documento incluye, en este orden:
+1. **Código QR tributario** (35 × 35 mm, esquina superior derecha) — solo en facturas emitidas con número y fecha. Contiene la URL de verificación AEAT construida por `url_verificacion()`. La imagen PNG temporal se genera y elimina automáticamente.
+2. **Leyenda legal** junto al QR (`VERI*FACTU` o `SISTEMA INFORMÁTICO NO VERIFICADO` según el modo configurado).
+3. **Logotipo** del emisor (esquina superior izquierda), leído de las preferencias. Si no existe el archivo, se omite sin error.
+4. **Cabecera del emisor**: razón social, CIF, dirección, teléfono, email e IBAN.
+5. **Bloque de datos** de la factura (número, fechas, estado) y del cliente (razón social, NIF, dirección, email).
+6. **Aviso de factura rectificativa** (en rojo) con número y fecha de la factura original, si aplica.
+7. **Tabla de líneas** con columnas Descripción, Cantidad, Precio Unit. y Subtotal.
+8. **Bloque de totales**: subtotal, IVA, IRPF y TOTAL en la columna derecha.
+9. **Marca de agua de borrador** en gris itálico, solo en borradores.
+10. **Pie de página** personalizado leído de las preferencias, si está configurado.
+
+<ParamField body="factura" type="Factura" required>
+  Objeto `Factura` ORM con las relaciones `cliente`, `lineas` y (si es rectificativa) `factura_rectificada` ya cargadas.
+</ParamField>
+
+**Retorna:** `Path` del archivo PDF generado.
+
+---
+
+### `ruta_pdf_factura`
+
+```python
+PDFService.ruta_pdf_factura(factura: Factura) -> Path
+```
+
+Calcula y devuelve la ruta esperada del PDF de una factura **sin generarlo**. Útil para comprobar si el archivo ya existe en disco antes de lanzar la generación.
+
+<ParamField body="factura" type="Factura" required>
+  Objeto `Factura` del que se desea conocer la ruta.
+</ParamField>
+
+**Retorna:** `Path` a `~/.lefa/facturas_pdf/{nombre}.pdf`.
+
+---
+
+### `obtener_o_generar`
+
+```python
+PDFService.obtener_o_generar(factura: Factura) -> Path
+```
+
+Devuelve la ruta del PDF si ya existe en disco; en caso contrario lo genera llamando a `generar`. Evita regenerar el PDF en cada apertura desde la UI.
+
+<ParamField body="factura" type="Factura" required>
+  Objeto `Factura` ORM.
+</ParamField>
+
+**Retorna:** `Path` al archivo PDF (existente o recién generado).
+
+---
+
+### `_texto_pdf_safe` *(privado)*
+
+```python
+PDFService._texto_pdf_safe(texto: str) -> str
+```
+
+Normaliza caracteres Unicode no soportados por la fuente Helvetica (em-dash `—`, en-dash `–`, signo menos `−`) sustituyéndolos por guiones ASCII. Se aplica automáticamente al pie de página y a otros campos de texto libre.
+
+---
+
+## `PresupuestoPDFService`
+
+Genera PDFs de presupuestos sin QR tributario ni información fiscal. La estructura es idéntica a la de las facturas pero más compacta, con el bloque de validez en lugar del vencimiento y sin los campos de rectificación.
+
+### `generar`
+
+```python
+PresupuestoPDFService.generar(presupuesto: Presupuesto) -> Path
+```
+
+Genera el PDF de un presupuesto y lo guarda en `~/.lefa/presupuestos_pdf/`. El nombre del archivo sigue el mismo patrón que las facturas:
+
+- **Borrador:** `PRES_BORRADOR_{id}.pdf`
+- **Emitido / Aceptado / Convertido:** `{numero_presupuesto}.pdf` (con `/` sustituido por `-`)
+
+El documento incluye:
+1. **Logotipo** del emisor (si existe).
+2. **Cabecera del emisor**: razón social, CIF, dirección y email.
+3. **Bloque de datos del presupuesto**: número, fecha, válido hasta, y datos del cliente.
+4. **Tabla de líneas** con las mismas columnas que la factura.
+5. **Bloque de totales**: subtotal, IVA, IRPF y TOTAL.
+6. **Marca de borrador** en gris itálico, si el presupuesto está en estado `BORRADOR`.
+7. **Nota informativa** fija: *«Este documento es un presupuesto informativo. No sustituye a una factura.»*
+
+<ParamField body="presupuesto" type="Presupuesto" required>
+  Objeto `Presupuesto` ORM con las relaciones `cliente` y `lineas` ya cargadas.
+</ParamField>
+
+**Retorna:** `Path` del archivo PDF generado.
+
+---
+
+## Workers de generación en segundo plano
+
+Para no bloquear la interfaz de usuario PyQt6, la generación de PDF se ejecuta siempre en un hilo secundario mediante dos workers dedicados:
+
+| Worker | Servicio que invoca | Señal de finalización |
+|---|---|---|
+| `pdf_worker.py` | `PDFService.generar` | `pdf_generado` (emite la `Path` del archivo) |
+| `presupuesto_pdf_worker.py` | `PresupuestoPDFService.generar` | `pdf_generado` (emite la `Path` del archivo) |
+
+Los workers heredan de `QThread` y emiten señales Qt para notificar a la ventana principal cuando el PDF está listo o cuando se produce un error, permitiendo abrir el visor del sistema operativo de forma automática tras la generación.
+
+---
+
+## Ejemplo de uso
+
+```python
+from lefa.services.factura_service import FacturaService
+from lefa.services.pdf_service import PDFService
+
+# Obtener una factura ya emitida
+factura = FacturaService.obtener_por_id(42)
+
+# Generar el PDF (o reutilizar si ya existe en disco)
+ruta = PDFService.obtener_o_generar(factura)
+print(ruta)  # ~/.lefa/facturas_pdf/FACT-2026-0042.pdf
+
+# Regenerar siempre (p. ej. tras cambiar las preferencias del emisor)
+ruta = PDFService.generar(factura)
+```
+
+```python
+from lefa.services.presupuesto_service import PresupuestoService
+from lefa.services.presupuesto_pdf_service import PresupuestoPDFService
+
+presupuesto = PresupuestoService.obtener_por_id(7)
+ruta = PresupuestoPDFService.generar(presupuesto)
+print(ruta)  # ~/.lefa/presupuestos_pdf/PRES-2026-0007.pdf
+```
+
+<Note>
+  El QR tributario solo se incrusta en facturas con `numero_factura` y `fecha_emision` asignados (es decir, facturas emitidas). Los borradores generan un PDF sin QR y con la marca de agua «DOCUMENTO EN BORRADOR - Sin validez fiscal».
+</Note>

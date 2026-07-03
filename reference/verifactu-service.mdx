@@ -1,0 +1,370 @@
+---
+title: "VeriFactu: módulos de hash, QR y registro en LEFA"
+sidebarTitle: "VeriFactu Service"
+description: "Referencia técnica de los módulos VeriFactu de LEFA: hash SHA-256 encadenado, registro JSON inmutable, QR AEAT y exportación ZIP de registros."
+---
+
+LEFA implementa los requisitos técnicos del **Sistema de Información de Facturación (SIF)** definidos en el Real Decreto de facturación y la Orden HAC/1177/2024, a través de cuatro módulos independientes ubicados en `lefa/verifactu/`. El módulo `hash.py` calcula el hash SHA-256 encadenado de cada factura emitida. El módulo `registro.py` genera y persiste en disco el registro JSON inmutable de cada emisión. El módulo `qr.py` construye la URL de cotejo AEAT y produce la imagen PNG del código QR. El módulo `export.py` empaqueta todos los registros en un archivo ZIP apto para auditoría o envío futuro a la AEAT. La cadena de hash es **única para todo el SIF**: las series `FACT`, `RECT` y cualquier otra comparten el mismo hilo cronológico; una rectificativa enlaza con la última factura emitida, no con la rectificativa anterior.
+
+---
+
+## `RegistroVerifactuService` — `registro.py`
+
+Crea y almacena registros encadenados en disco y en la base de datos. Debe operar siempre dentro de una transacción `BEGIN IMMEDIATE` para garantizar que la lectura del último hash y la escritura del nuevo sean atómicas.
+
+### `crear_registro_emision`
+
+```python
+RegistroVerifactuService.crear_registro_emision(
+    session: Session,
+    factura: Factura,
+    *,
+    persistir_json: bool = False,
+) -> RegistroVerifactu
+```
+
+Genera el registro VeriFactu para una factura recién emitida y asigna los campos de hash en el objeto ORM. El flujo interno es estrictamente ordenado para garantizar la integridad de la cadena:
+
+1. Bloquea la transacción con `BEGIN IMMEDIATE` si aún no está en curso.
+2. Consulta la última factura emitida del sistema (cualquier serie) que tenga `verifactu_hash` asignado, excluyendo la factura actual.
+3. Lee `verifactu_hash` de esa factura como `hash_anterior` (cadena vacía si es la primera).
+4. Llama a `calcular_hash_registro` con los datos de la factura actual y el `hash_anterior`.
+5. Construye el objeto `RegistroVerifactu` con todos los campos.
+6. Escribe `factura.verifactu_hash` y `factura.verifactu_hash_anterior` en el objeto ORM (dentro de la transacción, antes del commit).
+7. Si `persistir_json=True`, persiste el JSON en disco en este momento; de lo contrario, el llamador debe invocar `guardar_json` tras el commit.
+
+<ParamField body="session" type="Session" required>
+  Sesión SQLAlchemy activa, idealmente abierta con `session_scope_immediate()` (transacción `BEGIN IMMEDIATE`).
+</ParamField>
+<ParamField body="factura" type="Factura" required>
+  Objeto `Factura` ORM con `numero_factura` y `fecha_emision` ya asignados (dentro de la misma transacción de emisión).
+</ParamField>
+<ParamField body="persistir_json" type="bool">
+  Si es `True`, escribe el JSON en disco inmediatamente. Por defecto `False`; la escritura en disco se realiza tras el commit exitoso para evitar archivos huérfanos en caso de rollback.
+</ParamField>
+
+**Retorna:** `RegistroVerifactu` con todos los campos populados, incluidos los hashes.
+
+---
+
+### `guardar_json`
+
+```python
+RegistroVerifactuService.guardar_json(registro: RegistroVerifactu) -> Path
+```
+
+Persiste el registro en disco en formato JSON con indentación de 2 espacios y codificación UTF-8. El nombre del archivo es `{factura_id}_{numero_factura}.json` (con `/` sustituido por `-`). Debe llamarse **tras el commit** de la transacción de emisión para evitar archivos con datos de una transacción fallida.
+
+<ParamField body="registro" type="RegistroVerifactu" required>
+  Objeto `RegistroVerifactu` devuelto por `crear_registro_emision`.
+</ParamField>
+
+**Retorna:** `Path` del archivo JSON creado en `~/.lefa/verifactu/registros/`.
+
+---
+
+### `ruta_registro`
+
+```python
+RegistroVerifactuService.ruta_registro(factura_id: int, numero_factura: str) -> Path
+```
+
+Calcula la ruta esperada del archivo JSON de registro sin leerlo ni crearlo.
+
+<ParamField body="factura_id" type="int" required>
+  ID de la factura.
+</ParamField>
+<ParamField body="numero_factura" type="str" required>
+  Número oficial de la factura (p. ej. `"FACT-2026-0001"`).
+</ParamField>
+
+**Retorna:** `Path` a `~/.lefa/verifactu/registros/{factura_id}_{numero_factura}.json`.
+
+---
+
+## `calcular_hash_registro` — `hash.py`
+
+```python
+calcular_hash_registro(
+    nif_emisor: str,
+    numero_factura: str,
+    fecha_emision: date,
+    importe_total: float,
+    hash_anterior: str = "",
+) -> str
+```
+
+Calcula el hash SHA-256 del registro de facturación. El payload es una cadena con los campos separados por `|`, construida en el siguiente orden:
+
+```
+NIF_EMISOR|NUMERO_FACTURA|DD-MM-YYYY|IMPORTE.2F|HASH_ANTERIOR
+```
+
+El NIF se convierte a mayúsculas y se recortan los espacios. La fecha se formatea como `DD-MM-YYYY`. El importe se formatea con exactamente dos decimales. El `hash_anterior` puede ser una cadena vacía para la primera factura del sistema.
+
+<ParamField body="nif_emisor" type="str" required>
+  NIF/CIF del emisor en mayúsculas (p. ej. `"12345678A"`). Se normaliza internamente.
+</ParamField>
+<ParamField body="numero_factura" type="str" required>
+  Número oficial de la factura ya asignado.
+</ParamField>
+<ParamField body="fecha_emision" type="date" required>
+  Fecha de emisión de la factura.
+</ParamField>
+<ParamField body="importe_total" type="float" required>
+  Total neto de la factura (subtotal + IVA − IRPF), redondeado a 2 decimales.
+</ParamField>
+<ParamField body="hash_anterior" type="str">
+  Hash SHA-256 hexadecimal (64 caracteres) del registro inmediatamente anterior en la cadena. Cadena vacía `""` para la primera factura. Por defecto `""`.
+</ParamField>
+
+**Retorna:** Hash SHA-256 en hexadecimal en minúsculas (64 caracteres).
+
+**Ejemplo de payload:**
+
+```
+12345678A|FACT-2026-0001|15-01-2026|251.20|
+```
+*(hash_anterior vacío para la primera factura)*
+
+```
+12345678A|FACT-2026-0002|16-01-2026|605.00|a3f2b1c4...
+```
+*(con hash de la factura anterior)*
+
+---
+
+## Módulo `qr.py`
+
+### Constantes
+
+| Constante | Valor | Descripción |
+|---|---|---|
+| `QR_PX` | `100` | Resolución del PNG intermedio en píxeles (≈85–113 px a 72 dpi). |
+| `QR_MM` | `35.0` | Tamaño físico del QR en el PDF en milímetros (rango permitido AEAT: 30–40 mm). |
+| `TEXTO_LEGAL_VERIFACTU` | `"VERI*FACTU"` | Leyenda obligatoria en modo VeriFactu. |
+| `TEXTO_LEGAL_NO_VERIFACTU` | `"SISTEMA INFORMÁTICO NO VERIFICADO"` | Leyenda en modo no-VeriFactu. |
+
+---
+
+### `texto_legal_qr`
+
+```python
+texto_legal_qr(modo_verifactu: bool | None = None) -> str
+```
+
+Devuelve la leyenda legal obligatoria que debe figurar junto al código QR en la factura impresa, según la modalidad configurada.
+
+<ParamField body="modo_verifactu" type="bool | None">
+  Si es `None` (valor por defecto), se lee la constante `VERIFACTU_MODO_VERIFACTU` de `lefa.config`.
+</ParamField>
+
+**Retorna:** `"VERI*FACTU"` o `"SISTEMA INFORMÁTICO NO VERIFICADO"`.
+
+---
+
+### `url_verificacion`
+
+```python
+url_verificacion(
+    nif_emisor: str,
+    numero_factura: str,
+    fecha_emision: date,
+    importe_total: float,
+    hash_registro: str | None = None,
+    modo_verifactu: bool | None = None,
+) -> str
+```
+
+Construye la URL de cotejo en la sede electrónica de la AEAT según las especificaciones técnicas del QR (Orden HAC/1177/2024). El endpoint varía según la modalidad:
+
+- **VeriFactu:** `…/wlpl/TIKE-CONT/ValidarQR?…`
+- **No-VeriFactu:** `…/wlpl/TIKE-CONT/ValidarQRNoVerifactu?…`
+
+<ParamField body="nif_emisor" type="str" required>
+  NIF/CIF del emisor. Se convierte a mayúsculas y se recortan espacios.
+</ParamField>
+<ParamField body="numero_factura" type="str" required>
+  Número oficial de la factura.
+</ParamField>
+<ParamField body="fecha_emision" type="date" required>
+  Fecha de emisión de la factura.
+</ParamField>
+<ParamField body="importe_total" type="float" required>
+  Total neto de la factura con punto decimal y dos decimales.
+</ParamField>
+<ParamField body="hash_registro" type="str | None">
+  Hash SHA-256 del registro VeriFactu (64 hex en minúsculas). Solo se incluye en la URL en modo VeriFactu y si no es `None` ni vacío.
+</ParamField>
+<ParamField body="modo_verifactu" type="bool | None">
+  Si es `None`, se lee de `VERIFACTU_MODO_VERIFACTU` en `lefa.config`.
+</ParamField>
+
+**Retorna:** URL completa con todos los parámetros codificados con `urllib.parse.quote`.
+
+---
+
+### `generar_qr_png`
+
+```python
+generar_qr_png(url: str, ruta_destino: Path, size_px: int = QR_PX) -> Path
+```
+
+Genera una imagen PNG del código QR con la URL de verificación, usando la biblioteca `qrcode`. El directorio destino se crea automáticamente si no existe.
+
+<ParamField body="url" type="str" required>
+  URL de verificación AEAT a codificar en el QR.
+</ParamField>
+<ParamField body="ruta_destino" type="Path" required>
+  Ruta completa del archivo PNG de salida.
+</ParamField>
+<ParamField body="size_px" type="int">
+  Tamaño de la imagen resultante en píxeles (ancho y alto). Por defecto `100`.
+</ParamField>
+
+**Retorna:** `Path` del archivo PNG generado.
+
+---
+
+### `hash_para_url`
+
+```python
+hash_para_url(hash_registro: str | None) -> str
+```
+
+Normaliza el hash SHA-256 para incluirlo en la URL AEAT: lo convierte a minúsculas y recorta espacios. Devuelve cadena vacía si `hash_registro` es `None` o vacío. Centraliza el ajuste del formato del hash si la AEAT modificara la especificación.
+
+---
+
+## `VerifactuExport` — `export.py`
+
+### `exportar_zip`
+
+```python
+VerifactuExport.exportar_zip(ruta_destino: Path | None = None) -> Path
+```
+
+Empaqueta todos los archivos JSON de `~/.lefa/verifactu/registros/` en un archivo ZIP comprimido (deflate) legible por máquinas. Incluye además un archivo `indice.json` en la raíz del ZIP con el contenido de todos los registros en un array JSON.
+
+<ParamField body="ruta_destino" type="Path | None">
+  Ruta completa del archivo ZIP de salida. Si es `None`, se genera automáticamente como `verifactu_export_{fecha_hoy}.zip` en el directorio padre de `registros/` (normalmente `~/.lefa/verifactu/`). Si la ruta no termina en `.zip`, la extensión se añade automáticamente.
+</ParamField>
+
+**Retorna:** `Path` del archivo ZIP generado.
+
+**Estructura del ZIP:**
+
+```
+verifactu_export_2026-01-15.zip
+├── registros/
+│   ├── 1_FACT-2026-0001.json
+│   ├── 2_FACT-2026-0002.json
+│   └── 3_RECT-2026-0001.json
+└── indice.json
+```
+
+---
+
+## Formato del registro JSON
+
+Cada archivo JSON en `~/.lefa/verifactu/registros/` corresponde a una `RegistroVerifactu` serializada con `dataclasses.asdict`. La estructura completa es la siguiente:
+
+```json
+{
+  "factura_id": 1,
+  "numero_factura": "FACT-2026-0001",
+  "serie": "FACT",
+  "nif_emisor": "12345678A",
+  "fecha_emision": "2026-01-15",
+  "importe_total": 251.20,
+  "hash_registro": "a3f2b1c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2",
+  "hash_anterior": "",
+  "timestamp": "2026-01-15T10:32:05",
+  "tipo": "alta",
+  "factura_rectificada_id": null
+}
+```
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `factura_id` | `int` | Clave primaria de la factura en SQLite. |
+| `numero_factura` | `str` | Número oficial asignado en la emisión. |
+| `serie` | `str` | Serie de la factura (`"FACT"`, `"RECT"`, etc.). |
+| `nif_emisor` | `str` | NIF/CIF del emisor leído de las preferencias. |
+| `fecha_emision` | `str` | Fecha en formato ISO 8601 (`YYYY-MM-DD`). |
+| `importe_total` | `float` | Total neto de la factura redondeado a 2 decimales. |
+| `hash_registro` | `str` | Hash SHA-256 (64 hex) de esta factura. |
+| `hash_anterior` | `str` | Hash SHA-256 de la factura anterior en la cadena. Vacío para la primera. |
+| `timestamp` | `str` | Instante de generación del registro en ISO 8601 sin microsegundos. |
+| `tipo` | `str` | `"alta"` para facturas ordinarias; `"rectificativa"` para facturas de serie RECT. |
+| `factura_rectificada_id` | `int \| null` | ID de la factura original rectificada, o `null`. |
+
+---
+
+## URL AEAT — formato completo
+
+La URL construida por `url_verificacion` sigue la estructura siguiente:
+
+```
+https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR
+  ?nif=12345678A
+  &numserie=FACT-2026-0001
+  &fecha=15-01-2026
+  &importe=251.20
+  &hash=a3f2b1c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2
+```
+
+| Parámetro | Formato | Obligatorio | Descripción |
+|---|---|---|---|
+| `nif` | Texto en mayúsculas, URL-encoded | Sí | NIF/CIF del emisor. |
+| `numserie` | Texto URL-encoded | Sí | Número de factura completo. |
+| `fecha` | `DD-MM-AAAA` | Sí | Fecha de emisión de la factura. |
+| `importe` | Decimal con punto, 2 decimales | Sí | Importe total neto de la factura. |
+| `hash` | 64 caracteres hexadecimales en minúsculas | Solo en modo VeriFactu | Hash SHA-256 del registro. |
+
+En modo **no-VeriFactu**, el endpoint es `ValidarQRNoVerifactu` y el parámetro `hash` se omite.
+
+<Note>
+  La URL base (`VERIFACTU_URL_BASE`) y la activación del modo VeriFactu (`VERIFACTU_MODO_VERIFACTU`) se configuran en `lefa/config.py`. El valor por defecto apunta al entorno de preproducción de la AEAT (`prewww2.aeat.es`).
+</Note>
+
+---
+
+## Ejemplo de uso completo
+
+```python
+from lefa.verifactu.hash import calcular_hash_registro
+from lefa.verifactu.qr import url_verificacion, generar_qr_png, texto_legal_qr
+from lefa.verifactu.export import VerifactuExport
+from datetime import date
+from pathlib import Path
+
+# Calcular hash encadenado manualmente (FacturaService lo hace de forma automática)
+hash_actual = calcular_hash_registro(
+    nif_emisor="12345678A",
+    numero_factura="FACT-2026-0001",
+    fecha_emision=date(2026, 1, 15),
+    importe_total=251.20,
+    hash_anterior="",  # primera factura del sistema
+)
+
+# Construir la URL de verificación AEAT
+url = url_verificacion(
+    nif_emisor="12345678A",
+    numero_factura="FACT-2026-0001",
+    fecha_emision=date(2026, 1, 15),
+    importe_total=251.20,
+    hash_registro=hash_actual,
+)
+
+# Generar el PNG del QR
+ruta_qr = Path("/tmp/qr_test.png")
+generar_qr_png(url, ruta_qr)
+
+# Leyenda legal junto al QR
+leyenda = texto_legal_qr()  # → "VERI*FACTU"
+
+# Exportar todos los registros a ZIP para auditoría
+ruta_zip = VerifactuExport.exportar_zip()
+print(ruta_zip)  # ~/.lefa/verifactu/verifactu_export_2026-01-15.zip
+```

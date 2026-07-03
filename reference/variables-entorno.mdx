@@ -1,0 +1,132 @@
+---
+title: "Variables de entorno opcionales para ejecutar LEFA"
+sidebarTitle: "Variables de entorno"
+description: "LEFA acepta dos variables de entorno opcionales: LEFA_PROJECT_DIR para la raíz del proyecto y LEFA_VENV para la ruta del entorno virtual."
+---
+
+LEFA funciona sin necesidad de definir ninguna variable de entorno: en un arranque normal, `run_app.py` deduce la raíz del proyecto a partir de su propia ubicación en disco y coloca el entorno virtual dentro de esa carpeta. Las dos variables descritas en esta página existen únicamente para instalaciones especiales —paquetes `.deb`, rutas de sistema o entornos donde el directorio del proyecto no sea escribible— y no es necesario configurarlas en un despliegue estándar.
+
+## Variables disponibles
+
+<ParamField query="LEFA_PROJECT_DIR" type="string" optional>
+  Ruta absoluta a la raíz del proyecto LEFA. Cuando no está definida, `run_app.py` la infiere a partir de `Path(__file__).resolve().parent` y la establece automáticamente con `os.environ.setdefault`.
+
+  **Cuándo usarla:** instalaciones empaquetadas (p. ej. paquete `.deb`) o despliegues en rutas de sistema donde la ruta del script no coincide con la raíz real del proyecto.
+
+  ```bash
+  export LEFA_PROJECT_DIR=/opt/lefa
+  ```
+</ParamField>
+
+<ParamField query="LEFA_VENV" type="string" optional>
+  Ruta absoluta al directorio del entorno virtual. Cuando no está definida, `run_app.py` aplica la siguiente lógica de fallback:
+
+  1. Si el directorio del proyecto (`PROJECT_DIR`) **es escribible**, usa `PROJECT_DIR/.venv` (modo desarrollo).
+  2. Si el directorio del proyecto **no es escribible** (instalación en `/usr/share/…`), usa `$XDG_DATA_HOME/lefa/.venv` (o `~/.local/share/lefa/.venv` si `XDG_DATA_HOME` no está definida).
+
+  ```bash
+  export LEFA_VENV=/opt/lefa/.venv
+  ```
+</ParamField>
+
+### Lógica completa en `run_app.py`
+
+El fragmento siguiente muestra exactamente cómo `get_venv_dir()` resuelve la ruta al entorno virtual:
+
+```python
+def get_venv_dir() -> Path:
+    """
+    Directorio del entorno virtual.
+
+    - Desarrollo (árbol editable): PROJECT_DIR/.venv
+    - Paquete .deb (/usr/share/...): ~/.local/share/lefa/.venv
+    - LEFA_VENV: ruta explícita
+    """
+    override = os.environ.get("LEFA_VENV")
+    if override:
+        return Path(override)
+    local = PROJECT_DIR / ".venv"
+    if os.access(PROJECT_DIR, os.W_OK):
+        return local
+    data_home = Path(
+        os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")
+    )
+    return data_home / "lefa" / ".venv"
+```
+
+Y así es como `main()` fija `LEFA_PROJECT_DIR` antes de relanzar el proceso con el Python del venv:
+
+```python
+def main() -> int:
+    os.chdir(PROJECT_DIR)
+    os.environ.setdefault("LEFA_PROJECT_DIR", str(PROJECT_DIR))
+    if str(PROJECT_DIR) not in sys.path:
+        sys.path.insert(0, str(PROJECT_DIR))
+    ...
+```
+
+---
+
+## Uso en entornos empaquetados
+
+En una instalación estándar (clonar el repositorio y ejecutar `run_app.py`), estas variables no son necesarias. Los casos de uso típicos donde sí resultan útiles son:
+
+- **Paquetes `.deb` o instalaciones en `/usr/share/`**: el proyecto se despliega en un directorio del sistema (no escribible por el usuario), por lo que el entorno virtual debe residir en el directorio de datos del usuario (`~/.local/share/lefa/.venv`). LEFA lo detecta automáticamente, pero `LEFA_VENV` permite forzar una ubicación diferente si la política del sistema lo requiere.
+- **Rutas personalizadas en un servidor de escritorio compartido**: cuando varios usuarios comparten una instalación única de LEFA en `/opt/lefa` pero cada uno necesita su propio entorno virtual, `LEFA_VENV` permite apuntar a un venv por usuario sin modificar el proyecto.
+- **Entornos de CI/CD o pruebas automatizadas**: fijar `LEFA_PROJECT_DIR` garantiza que los scripts de prueba encuentren el proyecto independientemente del directorio de trabajo actual.
+
+<Note>
+  En Linux, si `LEFA_PROJECT_DIR` no es escribible y `XDG_DATA_HOME` tampoco está definida, el entorno virtual se creará en `~/.local/share/lefa/.venv`. Asegúrese de que el usuario tenga permisos de escritura en `~/.local/share` antes del primer arranque.
+</Note>
+
+---
+
+## Punto de entrada
+
+LEFA ofrece dos formas de arrancar la aplicación según el contexto de ejecución.
+
+### `run_app.py` — arranque recomendado
+
+Orquesta todo el ciclo de preparación del entorno antes de lanzar la interfaz gráfica:
+
+1. Determina la ruta del venv (respetando `LEFA_VENV` si está definida).
+2. Crea el venv si no existe.
+3. Instala o actualiza las dependencias (`requirements.txt` o los paquetes mínimos `PyQt6`, `SQLAlchemy`, `fpdf2`, `keyring`).
+4. Relanza el propio script usando el Python del venv (`os.execv`), reemplazando el proceso actual para no dejar un proceso padre bloqueando la terminal.
+
+```bash
+cd /ruta/al/proyecto
+python3 run_app.py
+```
+
+### `main.py` — punto de entrada directo
+
+Punto de entrada de la aplicación de escritorio (PyQt6). Asume que el entorno virtual ya está activo y que todas las dependencias están instaladas. Inicializa la base de datos SQLite, crea la ventana principal y arranca el bucle de eventos de Qt.
+
+```bash
+source .venv/bin/activate
+python main.py
+```
+
+<Note>
+  Llame a `main.py` directamente solo cuando el venv ya esté activo (instalación manual o desde un entorno de desarrollo con el intérprete correcto). Si lo ejecuta con el Python del sistema sin las dependencias instaladas, Python lanzará un `ModuleNotFoundError` al intentar importar `PyQt6`.
+</Note>
+
+---
+
+## Ejemplo de uso con variables de entorno
+
+El siguiente ejemplo muestra cómo lanzar LEFA desde una instalación empaquetada en `/opt/lefa` con un entorno virtual explícito:
+
+```bash
+export LEFA_PROJECT_DIR=/opt/lefa
+export LEFA_VENV=/opt/lefa/.venv
+python /opt/lefa/run_app.py
+```
+
+En este caso, `run_app.py`:
+
+1. Lee `LEFA_VENV` y apunta directamente a `/opt/lefa/.venv` sin aplicar la lógica de fallback.
+2. Fija `LEFA_PROJECT_DIR=/opt/lefa` en el entorno del proceso relanzado.
+3. Instala las dependencias en `/opt/lefa/.venv` si aún no están presentes.
+4. Relanza la aplicación con `/opt/lefa/.venv/bin/python`.

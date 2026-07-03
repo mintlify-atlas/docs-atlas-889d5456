@@ -1,0 +1,97 @@
+---
+title: "Catálogo de servicios y plantillas reutilizables"
+sidebarTitle: "Servicios y Plantillas"
+description: "Usa el catálogo de servicios y las plantillas de líneas y de factura completa en LEFA para facturar de forma rápida y consistente."
+---
+
+LEFA ofrece tres mecanismos de reutilización para evitar escribir los mismos conceptos una y otra vez: el **catálogo de servicios** para precios unitarios habituales, las **plantillas de líneas** para conceptos recurrentes con cantidad y precio, y las **plantillas de factura completa** para facturas mensuales o periódicas que repiten siempre el mismo cliente, líneas e impuestos. Todos se gestionan desde el menú **Herramientas** y se aplican desde la pestaña **Nueva Factura** con un solo clic.
+
+## Catálogo de servicios
+
+El catálogo de servicios almacena los conceptos que facturas habitualmente, cada uno con su precio unitario e IVA asociado.
+
+**Acceso:** **Herramientas → Catálogo de servicios…**
+
+Cada servicio incluye los siguientes campos:
+
+| Campo | Descripción |
+|-------|-------------|
+| **Nombre** | Etiqueta interna para identificar el servicio en el desplegable (p. ej. `Desarrollo web`). |
+| **Descripción** | Texto que se copia en la línea de la factura (p. ej. `Desarrollo de funcionalidad web`). |
+| **Cantidad** | Cantidad por defecto (p. ej. `1` hora). |
+| **Precio unitario** | Precio por unidad (p. ej. `40,00 €/h`). |
+| **% IVA** | Tipo de IVA del servicio (p. ej. `21 %`). |
+
+**Uso en Nueva Factura:** pulsa el botón **Añadir servicio**, selecciona el servicio en el desplegable y la línea se rellena automáticamente con la descripción, cantidad, precio unitario y porcentaje de IVA guardados en el catálogo. Puedes ajustar cualquier valor antes de guardar el borrador.
+
+<Tip>
+  Crea un servicio por cada tarifa que apliques habitualmente: hora de consultoría, jornada de formación, tarifa mensual de mantenimiento… Así, al facturar solo tienes que seleccionar el servicio y revisar la cantidad.
+</Tip>
+
+## Plantillas de líneas
+
+Las plantillas de líneas son conceptos reutilizables pensados para facturas recurrentes. A diferencia del catálogo de servicios, no almacenan IVA (el tipo de IVA se configura a nivel de factura), pero sí incluyen un **nombre de plantilla** para identificarlas rápidamente en el desplegable.
+
+**Acceso:** **Herramientas → Plantillas de líneas…**
+
+Cada plantilla incluye:
+
+| Campo | Descripción |
+|-------|-------------|
+| **Nombre** | Identificador en el desplegable de Nueva Factura. |
+| **Descripción** | Texto de la línea en la factura. |
+| **Cantidad** | Cantidad predefinida. |
+| **Precio unitario** | Importe por unidad. |
+
+Al instalar LEFA por primera vez se incluyen dos plantillas de ejemplo:
+
+- **Mantenimiento informático mensual** — 1 unidad × 250,00 €
+- **Desarrollo software** — 8 horas × 35,00 €/h
+
+**Uso en Nueva Factura:** elige la plantilla en el desplegable y pulsa **Añadir plantilla**. La línea se inserta con la descripción, cantidad y precio guardados. Puedes modificar cualquier valor antes de guardar.
+
+## Plantillas de factura completa
+
+Las plantillas de factura completa guardan una factura entera: cliente, serie, todas las líneas, IVA e IRPF. Son ideales para facturas mensuales que siempre tienen el mismo contenido.
+
+**Acceso:** **Herramientas → Plantillas de factura…**
+
+Cada plantilla incluye:
+
+| Campo | Descripción |
+|-------|-------------|
+| **Nombre** | Nombre descriptivo de la plantilla (p. ej. `Mantenimiento mensual Empresa X`). |
+| **Cliente** | Cliente predefinido (opcional; puede dejarse en blanco para seleccionarlo al crear la factura). |
+| **Serie** | Serie de facturación que se usará (p. ej. `MANT`). |
+| **% IVA / % IRPF** | Impuestos de la factura. |
+| **Líneas** | Lista completa de líneas con descripción, cantidad y precio. |
+
+**Uso:** desde **Nueva Factura**, pulsa **Nueva factura desde plantilla**, selecciona la plantilla y LEFA crea un borrador listo para emitir con todos los datos precargados. Solo tienes que revisar el vencimiento y pulsar **Emitir Factura**.
+
+<Note>
+  Las plantillas de factura completa no generan facturas automáticamente ni tienen ningún mecanismo de programación periódica. Cada mes tú decides cuándo crear el borrador a partir de la plantilla.
+</Note>
+
+## Comparativa de los tres mecanismos
+
+<Accordion title="¿Cuándo usar el catálogo de servicios?">
+  Usa el **catálogo de servicios** cuando tienes una tarifa definida para un tipo de trabajo (hora de desarrollo, hora de consultoría, licencia anual…) y quieres que el IVA correcto se aplique automáticamente al añadir ese concepto. Es el mecanismo más granular: añades un servicio a una línea existente o como nueva línea.
+
+  **Ejemplo:** tienes "Consultoría técnica — 90 €/h al 21 % IVA". Al añadirlo desde Nueva Factura, la línea y el tipo de IVA se configuran solos; solo cambias el número de horas.
+</Accordion>
+
+<Accordion title="¿Cuándo usar plantillas de líneas?">
+  Usa las **plantillas de líneas** cuando un mismo concepto —con descripción, cantidad y precio fijos— aparece en múltiples facturas a diferentes clientes. El IVA no está vinculado a la plantilla porque puede variar entre clientes o proyectos.
+
+  **Ejemplo:** "Mantenimiento mensual — 250 €" es una plantilla que usas tanto con el cliente A (21 % IVA) como con el cliente B (exento). La plantilla guarda el concepto; el IVA lo ajustas en cada factura.
+</Accordion>
+
+<Accordion title="¿Cuándo usar plantillas de factura completa?">
+  Usa las **plantillas de factura completa** cuando una factura entera se repite periódicamente: mismo cliente, mismas líneas, mismo IVA, misma serie. Es el atajo más rápido para facturas mensuales de servicios continuados.
+
+  **Ejemplo:** facturas todos los meses a "Empresa X" los mismos tres conceptos de mantenimiento web. Creas una plantilla con cliente, líneas e IVA; cada mes solo pulsas "Nueva factura desde plantilla" y emites.
+</Accordion>
+
+<Accordion title="¿Puedo combinar los tres mecanismos en la misma factura?">
+  Sí. Puedes empezar con **Nueva factura desde plantilla** para cargar la estructura base, luego añadir una línea extra desde el **catálogo de servicios** y finalmente insertar otro concepto desde una **plantilla de línea**. Los tres mecanismos son compatibles entre sí y se aplican sobre la misma factura en curso.
+</Accordion>

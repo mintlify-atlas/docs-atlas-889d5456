@@ -1,0 +1,113 @@
+---
+title: "Modelo Cliente: datos y relaciones del cliente en LEFA"
+sidebarTitle: "Cliente"
+description: "Referencia del modelo SQLAlchemy Cliente en LEFA: campos de identificación, datos de contacto, IBAN y códigos DIR3 para Facturae y FACe."
+---
+
+El modelo `Cliente` representa a los destinatarios de las facturas y presupuestos emitidos por el autónomo en LEFA. Almacena la información fiscal y de contacto necesaria para generar documentos válidos, así como los datos adicionales requeridos para la factura electrónica en formato **Facturae** y la presentación ante la administración pública a través de **FACe**. Cada cliente puede tener asociados múltiples facturas y presupuestos, que se eliminan en cascada al borrar el cliente.
+
+---
+
+## Tabla SQL
+
+La tabla en la base de datos SQLite se llama **`clientes`**. No define restricciones de unicidad adicionales más allá de la clave primaria; la identificación del cliente se gestiona operativamente mediante `cif_nif` y `razon_social`.
+
+---
+
+## Campos
+
+<ResponseField name="id" type="int" required>
+  Clave primaria autoincrementada. Identificador único e inmutable del cliente en la base de datos.
+</ResponseField>
+
+<ResponseField name="razon_social" type="str" required>
+  Nombre completo o razón social del cliente (máx. 200 caracteres). Campo obligatorio; aparece en las cabeceras de facturas y presupuestos.
+</ResponseField>
+
+<ResponseField name="cif_nif" type="str" required>
+  Número de identificación fiscal del cliente: CIF para empresas o NIF/NIE para personas físicas (máx. 20 caracteres). Campo obligatorio para la validez fiscal del documento.
+</ResponseField>
+
+<ResponseField name="direccion" type="str">
+  Dirección postal completa del cliente (máx. 300 caracteres). Valor por defecto: cadena vacía `""`. Se imprime en el cuerpo de la factura.
+</ResponseField>
+
+<ResponseField name="email" type="str">
+  Correo electrónico de contacto del cliente (máx. 150 caracteres). Valor por defecto: `""`. Se usa como destinatario sugerido al enviar facturas por correo.
+</ResponseField>
+
+<ResponseField name="telefono" type="str">
+  Número de teléfono de contacto (máx. 30 caracteres). Valor por defecto: `""`. Campo informativo; no interviene en la generación de documentos.
+</ResponseField>
+
+<ResponseField name="iban" type="str">
+  Número de cuenta bancaria en formato IBAN (máx. 34 caracteres). Valor por defecto: `""`. Requerido para incluir datos de domiciliación en archivos Facturae.
+</ResponseField>
+
+<ResponseField name="forma_pago" type="str">
+  Código de forma de pago según la especificación Facturae (máx. 2 caracteres). Valor por defecto: `"04"` (transferencia bancaria). Se incluye en el XML Facturae exportado.
+</ResponseField>
+
+<ResponseField name="dir3_oficina" type="str">
+  Código DIR3 de la oficina contable de la unidad administrativa destinataria (máx. 20 caracteres). Valor por defecto: `""`. Necesario para el envío a FACe.
+</ResponseField>
+
+<ResponseField name="dir3_organo" type="str">
+  Código DIR3 del órgano gestor de la unidad administrativa (máx. 20 caracteres). Valor por defecto: `""`. Necesario para el envío a FACe.
+</ResponseField>
+
+<ResponseField name="dir3_unidad" type="str">
+  Código DIR3 de la unidad tramitadora (máx. 20 caracteres). Valor por defecto: `""`. Necesario para el envío a FACe.
+</ResponseField>
+
+---
+
+## Relaciones
+
+<ResponseField name="facturas" type="list[Factura]">
+  Relación uno-a-muchos hacia el modelo `Factura`. Configurada con `back_populates="cliente"` y `cascade="all, delete-orphan"`: al eliminar un cliente, todas sus facturas asociadas se eliminan automáticamente de la base de datos.
+</ResponseField>
+
+<ResponseField name="presupuestos" type="list[Presupuesto]">
+  Relación uno-a-muchos hacia el modelo `Presupuesto`. Configurada con `back_populates="cliente"` y `cascade="all, delete-orphan"`: al eliminar un cliente, todos sus presupuestos asociados se eliminan también en cascada.
+</ResponseField>
+
+---
+
+## Campos Facturae / FACe
+
+Los campos `iban`, `forma_pago` y `dir3_*` son opcionales para clientes privados pero imprescindibles cuando el destinatario es una **administración pública** española que exige factura electrónica.
+
+### IBAN
+
+El campo `iban` almacena el número de cuenta bancaria del cliente en formato estándar internacional (hasta 34 caracteres). Se incorpora en el bloque de datos de pago del XML Facturae generado por LEFA.
+
+### Código de forma de pago (`forma_pago`)
+
+El valor `"04"` (transferencia bancaria) es el más habitual para autónomos. La especificación Facturae define los siguientes códigos, entre otros:
+
+| Código | Descripción |
+|---|---|
+| `01` | Al contado |
+| `02` | Recibo domiciliado |
+| `04` | Transferencia bancaria |
+| `05` | Letra aceptada |
+| `06` | Crédito documentario |
+| `08` | Cheque |
+| `09` | Transferencia al exterior |
+
+<Note>
+  LEFA almacena el código como cadena de texto de 2 caracteres. Si necesitas usar un código distinto al valor por defecto `"04"`, edítalo directamente en el formulario del cliente.
+</Note>
+
+### Códigos DIR3
+
+El sistema **DIR3** (Directorio Común de Unidades Orgánicas y Oficinas) es el registro oficial que identifica los organismos de la administración pública española. Para presentar una factura electrónica a través de **FACe** (Punto General de Entrada de Facturas Electrónicas de la AGE) es obligatorio indicar tres códigos:
+
+| Campo en el modelo | Rol en FACe |
+|---|---|
+| `dir3_oficina` | Oficina contable receptora de la factura |
+| `dir3_organo` | Órgano gestor responsable del gasto |
+| `dir3_unidad` | Unidad tramitadora que gestiona el expediente |
+
+Estos códigos los proporciona el organismo público destinatario antes de cursar el pedido. Déjalos vacíos (`""`) si el cliente no es una administración pública.

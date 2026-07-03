@@ -1,0 +1,142 @@
+---
+title: "Crear y gestionar facturas en LEFA"
+sidebarTitle: "Facturas"
+description: "Aprende a crear borradores, emitir, duplicar y rectificar facturas en LEFA, con numeración correlativa y generación automática de PDF y XML."
+---
+
+LEFA centraliza todo el flujo de facturación en la pestaña **Nueva Factura** y el **Listado**. Un borrador se puede editar libremente hasta que pulses **Emitir Factura**, momento en que se asigna el número oficial, se generan el PDF y el XML Facturae, y se crea el registro VeriFactu encadenado, todo dentro de una única transacción atómica en SQLite. A partir de ese instante la factura queda bloqueada y solo puede corregirse mediante una factura rectificativa.
+
+## Ciclo de vida de una factura
+
+Las facturas en LEFA siguen un camino lineal definido por el enum `EstadoFactura`:
+
+| Estado | Color en el Listado | Descripción |
+|--------|---------------------|-------------|
+| **Borrador** | Gris claro | La factura está en edición. No tiene número oficial (`numero_factura` es `NULL`). Se puede modificar en cualquier momento. |
+| **Emitida** | Naranja claro | Numerada y bloqueada. Tiene fecha de emisión, PDF, XML Facturae y registro VeriFactu. Puede marcarse como Cobrada o enviarse por correo. |
+| **Cobrada** | Verde claro | Emitida y confirmada como pagada. El vencimiento deja de mostrarse como pendiente. |
+
+<Note>
+  Un borrador no aparece en ningún registro fiscal. Solo al emitir se asigna número correlativo y se genera el registro VeriFactu inmutable.
+</Note>
+
+## Crear un borrador
+
+<Steps>
+  <Step title="Abrir la pestaña Nueva Factura">
+    Haz clic en la pestaña **Nueva Factura** en la ventana principal. LEFA recuerda automáticamente el último cliente utilizado y lo selecciona por defecto.
+  </Step>
+  <Step title="Seleccionar cliente y serie">
+    Elige el cliente en el desplegable. Si aún no existe, créalo en **Clientes → Nuevo cliente…**. Selecciona también la **serie** de facturación (por ejemplo `FACT`, `WEB` o `MANT`; las series se configuran en **Herramientas → Preferencias**).
+  </Step>
+  <Step title="Añadir líneas">
+    Puedes agregar líneas de cuatro formas:
+    - **Manual**: escribe descripción, cantidad y precio directamente.
+    - **Servicio del catálogo**: pulsa **Añadir servicio** y elige un servicio guardado; la línea y el IVA se rellenan solos.
+    - **Plantilla de línea**: elige una plantilla en el desplegable y pulsa **Añadir plantilla**.
+    - **Plantilla de factura completa**: usa **Nueva factura desde plantilla** para cargar cliente, líneas e impuestos de una sola vez.
+  </Step>
+  <Step title="Configurar IVA, IRPF y vencimiento">
+    Ajusta los porcentajes de IVA e IRPF si difieren de tus valores por defecto. Indica la fecha de vencimiento o deja que LEFA la calcule automáticamente según los días configurados en Preferencias.
+  </Step>
+  <Step title="Guardar borrador">
+    Pulsa **Guardar** para almacenar el borrador sin emitirlo. Podrás volver a editarlo cuando quieras.
+  </Step>
+</Steps>
+
+## Emitir una factura
+
+<Steps>
+  <Step title="Revisar el borrador">
+    Abre el borrador en **Nueva Factura** y comprueba que cliente, líneas e importes son correctos.
+  </Step>
+  <Step title="Pulsar Emitir Factura">
+    Haz clic en **Emitir Factura**. LEFA ejecuta una transacción `BEGIN IMMEDIATE` en SQLite que, de forma atómica:
+    1. Asigna el número correlativo siguiente dentro de la serie (por ejemplo `FACT-2026-0044`).
+    2. Calcula y encadena el hash SHA-256 VeriFactu con el registro anterior.
+    3. Guarda fecha de emisión, estado **Emitida** y hashes en la base de datos.
+    4. Hace *commit*; solo después persiste el JSON VeriFactu en `~/.lefa/verifactu/registros/`.
+  </Step>
+  <Step title="Archivos generados automáticamente">
+    Tras la emisión encontrarás en disco:
+    - **PDF** en `~/.lefa/facturas_pdf/` (con QR tributario AEAT de 35 × 35 mm).
+    - **XML Facturae** en `~/.lefa/facturas_xml/`.
+  </Step>
+</Steps>
+
+<Note>
+  La transacción `BEGIN IMMEDIATE` garantiza que, incluso si dos ventanas intentan emitir simultáneamente, los números correlativos sean siempre únicos e irrepetibles, sin huecos ni duplicados.
+</Note>
+
+## Acciones en el Listado
+
+En la pestaña **Listado** dispones de las siguientes acciones sobre las facturas seleccionadas:
+
+| Acción | Disponible en | Descripción |
+|--------|---------------|-------------|
+| **Guardar PDF…** | Emitida / Cobrada | Guarda una copia del PDF en la ubicación que elijas. Permite seleccionar varias facturas a la vez. |
+| **Abrir carpeta** | Emitida / Cobrada | Abre el explorador de archivos en `~/.lefa/facturas_pdf/` para acceder al PDF y al XML. |
+| **Duplicar** | Emitida / Cobrada | Crea un borrador nuevo con los mismos datos (ver sección siguiente). |
+| **Rectificar** | Emitida / Cobrada | Crea un borrador rectificativo en serie `RECT` vinculado a la original (ver sección siguiente). |
+| **Marcar como Cobrada** | Emitida | Cambia el estado a **Cobrada** y actualiza el indicador de vencimiento. |
+| **Enviar por email** | Emitida / Cobrada | Envía el PDF al correo del cliente usando la cuenta SMTP configurada y registra el envío. |
+
+## Duplicar una factura
+
+La acción **Duplicar** crea un borrador nuevo copiando el cliente, las líneas, la serie y los porcentajes de IVA e IRPF de la factura original. El vencimiento se recalcula desde la fecha actual según los días configurados en Preferencias, y el historial de envío no se arrastra. El nuevo borrador se abre automáticamente en **Nueva Factura** para que puedas revisarlo antes de emitir.
+
+<Note>
+  Solo se pueden duplicar facturas ya emitidas o cobradas. Un borrador no puede duplicarse.
+</Note>
+
+## Facturas rectificativas
+
+Las rectificativas permiten corregir o anular una factura ya emitida manteniendo la trazabilidad fiscal.
+
+<Steps>
+  <Step title="Seleccionar la factura a rectificar">
+    En el **Listado**, selecciona una factura en estado **Emitida** o **Cobrada**. Una factura que ya sea rectificativa no puede volver a rectificarse.
+  </Step>
+  <Step title="Pulsar Rectificar">
+    Haz clic en **Rectificar**. LEFA crea un borrador en serie **RECT** con las mismas líneas e impuestos que la original, el campo `factura_rectificada_id` apuntando a la factura corregida, y lo abre en **Nueva Factura**.
+  </Step>
+  <Step title="Ajustar las líneas">
+    Modifica las líneas según lo que debas corregir. Si quieres devolver importe al cliente, usa **importes negativos** en los precios unitarios.
+  </Step>
+  <Step title="Emitir la rectificativa">
+    Pulsa **Emitir Factura**. La rectificativa recibe su propio número correlativo dentro de la serie `RECT` y genera su PDF y XML Facturae. El PDF indica expresamente qué factura original rectifica.
+  </Step>
+</Steps>
+
+<Note>
+  La cadena de hashes VeriFactu es única e ininterrumpida para todo el programa. Una factura rectificativa (serie `RECT`) encadena con la última factura emitida cronológicamente en el sistema, independientemente de la serie.
+</Note>
+
+## Vencimientos
+
+Cada factura puede llevar una **fecha de vencimiento**. En el **Listado**, la columna de vencimiento muestra una etiqueta de estado calculada en tiempo real, sin ningún automatismo ni aviso emergente:
+
+| Etiqueta | Condición |
+|----------|-----------|
+| **—** | La factura es un borrador. |
+| **Pendiente** | Emitida sin fecha de vencimiento asignada, o con vencimiento a más de 5 días. |
+| **Vence en N días** | Quedan 1 a 5 días para el vencimiento. |
+| **Vence hoy** | La fecha de vencimiento es hoy. |
+| **Vencida** | La fecha de vencimiento ya pasó y la factura sigue emitida. |
+| **Cobrada** | La factura está en estado Cobrada, independientemente de la fecha. |
+
+<Tip>
+  Para configurar el número de días de vencimiento por defecto, ve a **Herramientas → Preferencias** y ajusta el campo **Vencimiento por defecto**.
+</Tip>
+
+## Historial de envío
+
+Cada factura almacena tres campos relacionados con el envío por correo:
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `enviada` | Booleano | `true` tras un envío completado correctamente. |
+| `fecha_envio` | Fecha | Fecha en que se realizó el envío. |
+| `destinatario` | Texto | Dirección de correo a la que se envió. |
+
+En el **Listado**, la columna **Envío** muestra `✓ Enviada (DD/MM/AAAA)` si la factura ya fue enviada, o `Pendiente de enviar` en caso contrario. Los borradores muestran `—`. Esto permite saber de un vistazo, meses después, si una factura concreta ya salió por correo.

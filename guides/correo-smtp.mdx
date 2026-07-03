@@ -1,0 +1,94 @@
+---
+title: "Configurar y usar el correo SMTP en LEFA"
+sidebarTitle: "Correo SMTP"
+description: "Conecta tu cuenta de correo en LEFA para enviar facturas por email directamente desde la app, con contraseña segura en el llavero del sistema."
+---
+
+LEFA puede enviar facturas en PDF directamente al cliente por correo electrónico sin salir de la aplicación. Para ello necesita los datos de conexión de tu cuenta de correo (servidor SMTP, puerto y credenciales). La configuración se guarda en `~/.lefa/smtp_config.json`, pero la contraseña nunca se escribe en disco: se almacena en el llavero seguro del sistema operativo.
+
+## Abrir la configuración
+
+Accede al formulario de configuración desde el menú principal: **Herramientas → Configurar correo electrónico…**
+
+Se abrirá el diálogo **Configurar correo electrónico**, donde puedes introducir o modificar todos los parámetros de tu cuenta SMTP.
+
+## Campos de configuración
+
+| Campo | Campo interno | Descripción |
+|---|---|---|
+| Servidor SMTP | `servidor` | Nombre de host del servidor saliente. Ej. `smtp.gmail.com`, `smtp.office365.com` |
+| Puerto | `puerto` | Puerto de conexión. `587` para STARTTLS, `465` para SSL/TLS |
+| Seguridad | `seguridad` | Modo de cifrado: `STARTTLS` (recomendado), `SSL/TLS` o sin cifrado |
+| Usuario | `usuario` | Dirección de correo con la que te autenticas en el servidor |
+| Contraseña | _(llavero)_ | Credencial de acceso; se guarda en el llavero del sistema, no en el JSON |
+| Correo remitente | `remitente` | Dirección que verá el destinatario en el campo «De:» |
+| Nombre remitente | `nombre_remitente` | Nombre visible del remitente. Ej. «Mi Empresa Autónoma» |
+
+Al cambiar la seguridad, LEFA ajusta automáticamente el puerto sugerido (587 para STARTTLS, 465 para SSL).
+
+## Contraseña segura con keyring
+
+La contraseña SMTP **nunca se guarda en texto plano** en `smtp_config.json` ni en ningún otro archivo del directorio `~/.lefa`. LEFA utiliza la biblioteca `keyring` para delegar el almacenamiento en el llavero nativo del sistema operativo.
+
+| Sistema operativo | Llavero utilizado |
+|---|---|
+| Linux (GNOME) | GNOME Keyring |
+| Linux (KDE) | KWallet |
+| Windows | Windows Credential Manager |
+| macOS | Keychain |
+
+El servicio de llavero bajo el que se guarda la credencial está identificado como **`lefa-smtp`** (constante `KEYRING_SERVICE` en `config.py`). Si en algún momento necesitas revisar o eliminar la contraseña manualmente desde el gestor de contraseñas de tu sistema, búscala con ese nombre.
+
+Si dejas el campo de contraseña vacío al guardar la configuración, LEFA mantiene la contraseña que ya estaba almacenada en el llavero.
+
+## Probar conexión
+
+Antes de enviar la primera factura, verifica que los datos son correctos pulsando el botón **Probar conexión** en el propio diálogo de configuración. LEFA intentará conectarse al servidor SMTP con las credenciales introducidas y mostrará el resultado directamente en el diálogo.
+
+Si quieres confirmar también que el envío funciona de extremo a extremo, activa la casilla **Enviar correo de prueba al remitente al probar conexión**: LEFA enviará un mensaje de prueba a la dirección configurada como remitente para que puedas verificar que llega correctamente.
+
+## Gmail y Outlook
+
+<Tip>
+Gmail y Outlook (Microsoft 365) exigen una **contraseña de aplicación** específica en lugar de la contraseña habitual de la cuenta, especialmente si tienes activada la verificación en dos pasos. La contraseña de aplicación es una clave de 16 caracteres que generas desde la configuración de seguridad de tu cuenta de Google o Microsoft.
+
+Consulta la guía oficial de Google para generarla: [https://support.google.com/accounts/answer/185833](https://support.google.com/accounts/answer/185833)
+
+En Outlook/Microsoft 365 busca «contraseñas de aplicación» en la configuración de seguridad avanzada de tu cuenta Microsoft.
+</Tip>
+
+Configuración recomendada para los proveedores más habituales:
+
+| Proveedor | Servidor SMTP | Puerto | Seguridad |
+|---|---|---|---|
+| Gmail | `smtp.gmail.com` | 587 | STARTTLS |
+| Outlook / Microsoft 365 | `smtp.office365.com` | 587 | STARTTLS |
+| Gmail (SSL alternativo) | `smtp.gmail.com` | 465 | SSL/TLS |
+
+## Enviar una factura
+
+Una vez configurado el correo, puedes enviar cualquier factura emitida directamente desde LEFA:
+
+1. Ve a la pestaña **Listado**.
+2. Selecciona la factura que quieres enviar.
+3. Pulsa **Enviar por email**.
+
+También puedes pulsar **Enviar por email** directamente desde la pestaña **Nueva Factura** justo después de emitir una factura.
+
+LEFA adjunta el PDF de la factura al mensaje y lo envía al email del cliente. Tras un envío correcto, la factura queda registrada con los siguientes campos actualizados en la base de datos:
+
+| Campo | Descripción |
+|---|---|
+| `enviada` | `true` tras un envío exitoso |
+| `fecha_envio` | Fecha y hora en que se realizó el envío |
+| `destinatario` | Dirección de email a la que se envió |
+
+En la columna **Envío** del Listado verás *✓ Enviada (fecha)* para las facturas ya enviadas y *Pendiente de enviar* para las que aún no se han enviado.
+
+## Limitaciones en entornos sin escritorio
+
+<Warning>
+En Linux, si ejecutas LEFA por SSH o en un servidor sin interfaz gráfica (*headless*), la biblioteca `keyring` puede fallar al no encontrar el demonio D-Bus de la sesión (GNOME Keyring o KWallet). En ese caso, la contraseña no podrá guardarse ni recuperarse del llavero y el envío de correos no funcionará.
+
+LEFA está diseñado para funcionar como aplicación de escritorio. Para un uso correcto en Linux, es necesario un entorno gráfico activo con un demonio de llavero en ejecución.
+</Warning>

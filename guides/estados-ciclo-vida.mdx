@@ -1,0 +1,108 @@
+---
+title: "Estados y ciclo de vida de facturas y presupuestos"
+sidebarTitle: "Estados y ciclo de vida"
+description: "Referencia completa de los estados de factura (Borrador, Emitida, Cobrada) y presupuesto (Borrador, Emitido, Aceptado, Convertido, Rechazado) en LEFA."
+---
+
+En LEFA, tanto las facturas como los presupuestos siguen un ciclo de vida bien definido: nacen como borradores editables, se emiten de forma oficial y, a partir de ese momento, quedan bloqueados para preservar la integridad del registro. Entender estos estados te ayuda a saber qué acciones están disponibles en cada momento y qué ocurre con la numeración, los PDFs y la trazabilidad entre documentos.
+
+## Estados de factura
+
+Cada factura se encuentra en uno de los tres estados definidos por el enumerado `EstadoFactura` del modelo:
+
+| Estado | Valor en `EstadoFactura` | Color en listado | ¿Es editable? | Descripción |
+|---|---|---|---|---|
+| Borrador | `BORRADOR` | Gris claro | **Sí** | Sin número oficial. Totalmente editable. `numero_factura` es `NULL`. |
+| Emitida | `EMITIDA` | Naranja claro | No | Número correlativo asignado. PDF y XML Facturae generados. Registro VeriFactu encadenado. |
+| Cobrada | `COBRADA` | Verde claro | No | Emitida y marcada como pagada. No genera cambios adicionales en el PDF. |
+
+<Note>
+  El campo `numero_factura` permanece `NULL` mientras la factura está en **Borrador**. Solo se asigna el número oficial en el momento de la emisión, dentro de una transacción atómica que garantiza la correlatividad de la numeración y el encadenamiento VeriFactu. Esto permite crear y modificar borradores sin consumir números de la serie.
+</Note>
+
+La propiedad `es_editable` del modelo devuelve `True` únicamente cuando `estado == EstadoFactura.BORRADOR`. Cualquier intento de modificar una factura emitida o cobrada desde el servicio lanzará un error.
+
+## Transiciones de factura
+
+El flujo habitual es lineal, con dos acciones especiales (duplicar y rectificar) que generan un nuevo borrador a partir de un documento ya cerrado.
+
+<Steps>
+  <Step title="Guardar como Borrador">
+    El usuario crea o edita una factura en la pestaña **Nueva Factura** y pulsa **Guardar**. La factura queda en estado `BORRADOR`, sin número ni fecha de emisión.
+  </Step>
+  <Step title="Emitir">
+    Al pulsar **Emitir Factura**, LEFA asigna el número correlativo de la serie, fija la fecha de emisión, genera el PDF, el XML Facturae y el registro VeriFactu encadenado. El estado pasa a `EMITIDA`. A partir de este punto, la factura no puede modificarse.
+  </Step>
+  <Step title="Marcar como Cobrada">
+    Desde el **Listado**, selecciona la factura emitida y pulsa **Marcar como Cobrada**. El estado pasa a `COBRADA`. La columna de vencimiento mostrará «Cobrada» en lugar de cualquier otro indicador de plazo.
+  </Step>
+</Steps>
+
+Además del flujo principal, existen dos operaciones que crean un nuevo borrador a partir de una factura cerrada:
+
+- **Duplicar** — disponible para facturas en estado `EMITIDA` o `COBRADA`. Crea un borrador nuevo con el mismo cliente, líneas, serie e impuestos. El vencimiento se recalcula desde la fecha actual. El borrador se abre automáticamente en **Nueva Factura**.
+- **Rectificar** — disponible para facturas en estado `EMITIDA` o `COBRADA`. Crea un borrador en la serie `RECT`, vinculado a la factura original mediante `factura_rectificada_id`. El PDF de la rectificativa indica qué factura corrige. Usa importes negativos en las líneas si debes devolver dinero al cliente.
+
+<Note>
+  Una factura que ya es rectificativa no puede volver a rectificarse. El servicio lanza un error si se intenta rectificar una factura cuyo campo `factura_rectificada_id` ya no es `NULL`.
+</Note>
+
+## Estados de presupuesto
+
+Los presupuestos siguen un ciclo más amplio, definido por el enumerado `EstadoPresupuesto`:
+
+| Estado | Valor en `EstadoPresupuesto` | Descripción |
+|---|---|---|
+| Borrador | `BORRADOR` | Editable. Sin número oficial. `numero_presupuesto` es `NULL`. |
+| Emitido | `EMITIDO` | Número asignado y PDF generado. Enviado al cliente para su valoración. |
+| Aceptado | `ACEPTADO` | El cliente ha confirmado su aceptación. Listo para convertir en factura. |
+| Convertido | `CONVERTIDO` | Se ha creado un borrador de factura a partir de este presupuesto. El campo `factura_id` almacena la referencia a esa factura. |
+| Rechazado | `RECHAZADO` | El cliente ha declinado la oferta. Estado terminal. |
+
+<Note>
+  Un presupuesto en estado **Convertido** muestra la factura vinculada en la columna **Factura** del listado de presupuestos. El botón **Ver factura asociada** abre esa factura directamente en **Nueva Factura**. La trazabilidad es bidireccional: la factura conserva `presupuesto_origen_id` apuntando al presupuesto de origen.
+</Note>
+
+## Transiciones de presupuesto
+
+<Steps>
+  <Step title="Guardar como Borrador">
+    El presupuesto se crea en la pestaña **Nuevo Presupuesto**. Permanece editable hasta que se emite.
+  </Step>
+  <Step title="Emitir presupuesto">
+    Al pulsar **Emitir presupuesto**, LEFA asigna el número correlativo de la serie `PRES`, fija la fecha de emisión y genera el PDF en `~/.lefa/presupuestos_pdf/`. Si no se especificó fecha de validez, se establece automáticamente en 30 días desde hoy. El estado pasa a `EMITIDO`.
+  </Step>
+  <Step title="Aceptar">
+    Cuando el cliente confirma la oferta, ve a **Listado presupuestos** y pulsa **Aceptar**. El estado pasa a `ACEPTADO`. Solo pueden aceptarse presupuestos en estado `EMITIDO`.
+  </Step>
+  <Step title="Convertir en factura">
+    Pulsa **Convertir en factura** en el listado. LEFA crea un borrador de factura con el mismo cliente, líneas e impuestos, y marca el presupuesto como `CONVERTIDO`. El borrador se abre automáticamente en **Nueva Factura** con todo cargado; solo tienes que revisar y pulsar **Emitir**.
+
+    Si el presupuesto aún está en estado `EMITIDO` (no fue aceptado explícitamente), LEFA lo acepta de forma automática antes de convertirlo.
+  </Step>
+</Steps>
+
+La transición hacia **Rechazado** puede producirse desde dos estados:
+
+- `EMITIDO` → `RECHAZADO`
+- `ACEPTADO` → `RECHAZADO`
+
+Un presupuesto rechazado es un estado terminal: no puede aceptarse ni convertirse en factura. Tampoco puede rechazarse un presupuesto que ya está convertido.
+
+## Vencimientos de factura
+
+Además del estado de ciclo de vida, cada factura puede tener una **fecha de vencimiento**. El método `texto_estado_vencimiento()` del modelo `Factura` calcula la etiqueta que aparece en la columna **Vencimiento** del listado:
+
+| Situación | Etiqueta mostrada |
+|---|---|
+| Factura en estado `BORRADOR` | `—` |
+| Factura en estado `COBRADA` | `Cobrada` |
+| Emitida sin fecha de vencimiento | `Pendiente` |
+| Fecha de vencimiento anterior a hoy | `Vencida` |
+| Vencimiento es hoy (0 días restantes) | `Vence hoy` |
+| Entre 1 y 5 días para el vencimiento | `Vence en N días` |
+| Más de 5 días para el vencimiento | `Pendiente` |
+
+<Note>
+  LEFA no realiza ninguna acción automática cuando una factura vence. Las etiquetas son puramente informativas para que tengas siempre visible qué está pendiente de cobro. Si el vencimiento predeterminado está configurado en **Herramientas → Preferencias…**, LEFA lo aplica automáticamente al emitir (fecha de emisión + días configurados), siempre que la factura no tenga ya una fecha de vencimiento explícita.
+</Note>

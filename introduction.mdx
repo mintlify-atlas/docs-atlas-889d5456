@@ -1,0 +1,59 @@
+---
+title: "LEFA: facturación de autónomos sin la nube"
+sidebarTitle: "Introducción"
+description: "LEFA es una app de escritorio para facturar sin suscripciones. Genera PDFs, XML Facturae y registros VeriFactu completamente en local."
+---
+
+LEFA (*Local & Eficiente Facturación para Autónomos*) es una aplicación de escritorio diseñada para que los autónomos puedan emitir facturas, generar presupuestos y llevar el control de sus cobros sin necesidad de contratar ningún servicio externo. Todo el funcionamiento es completamente local: los datos residen en tu equipo, los PDFs se generan en tu disco y ninguna información sale de tu red. Su filosofía es la sencillez radical: hacer bien las cosas que un autónomo necesita a diario, sin añadir complejidad de ERP ni curvas de aprendizaje innecesarias.
+
+## ¿Por qué LEFA?
+
+LEFA nació de una conversación con un pequeño autónomo que estaba harto de tener que manejar un ERP complejo para realizar una tarea tan cotidiana como emitir una factura o enviársela a un cliente. La mayoría de las soluciones del mercado están pensadas para empresas medianas o grandes, y obligan al profesional independiente a aprender decenas de módulos que nunca llegará a usar.
+
+El objetivo de LEFA es diferente: ofrecer una herramienta de escritorio **sencilla, rápida y totalmente local**, pensada específicamente para quienes solo necesitan gestionar sus clientes y emitir facturas. Al funcionar al cien por cien en local, LEFA no requiere suscripciones mensuales, no depende de servicios en la nube y no necesita conexión a internet para su funcionamiento diario. Tus datos son tuyos, siempre.
+
+## Tecnología
+
+LEFA está construida sobre un conjunto de bibliotecas de código abierto consolidadas:
+
+| Capa | Tecnología | Descripción |
+|---|---|---|
+| **Interfaz de usuario** | PyQt6 | Ventanas y controles nativos, maquetados 100 % por código (sin archivos `.ui`) |
+| **Base de datos** | SQLite + SQLAlchemy | Persistencia local sin servidor; un único archivo `lefa.db` en `~/.lefa/` |
+| **Generación de PDF** | FPDF2 + qrcode | Facturas y presupuestos en PDF con QR tributario de la AEAT (35 × 35 mm) |
+| **Correo electrónico** | smtplib + keyring | Envío SMTP con contraseña almacenada en el llavero seguro del sistema operativo |
+
+El punto de entrada principal es `main.py`, que inicializa la base de datos y arranca la ventana principal de PyQt6. El script auxiliar `run_app.py` automatiza además la creación del entorno virtual e instalación de dependencias antes del primer arranque.
+
+## Compatibilidad
+
+LEFA es compatible con **Linux** y **Windows**. En ambas plataformas funciona de la misma forma: descarga el proyecto, ejecuta `run_app.py` y la aplicación se pone en marcha.
+
+En Linux se recomienda cualquier entorno de escritorio habitual (GNOME, KDE Plasma, XFCE, etc.). En Windows es suficiente con el escritorio estándar.
+
+<Note>
+  **Requisito de entorno gráfico para el llavero:** `keyring` necesita un demonio de sesión activo para guardar y recuperar la contraseña SMTP de forma segura. En Linux, si ejecutas LEFA por SSH o en un servidor sin interfaz gráfica (*headless*), `keyring` puede fallar al no encontrar el demonio D-Bus correspondiente (GNOME Keyring, KWallet, etc.). Para uso normal en escritorio no es necesaria ninguna configuración adicional.
+</Note>
+
+## Estado del proyecto
+
+<Note>
+  LEFA se encuentra actualmente en **fase de desarrollo y pruebas**. Aunque muchas funcionalidades ya están implementadas y operativas, todavía no se recomienda su uso en entornos de producción ni para la gestión de la facturación real de un negocio. LEFA no pretende competir con un ERP: pretende evitar que un pequeño autónomo necesite uno para realizar su trabajo diario.
+</Note>
+
+## Explora la documentación
+
+<CardGroup cols={2}>
+  <Card title="Inicio rápido" icon="rocket" href="/quickstart">
+    Instala LEFA y emite tu primera factura en menos de diez minutos.
+  </Card>
+  <Card title="Facturación" icon="file-invoice" href="/guides/facturas">
+    Crea, emite, duplica y rectifica facturas. Gestiona cobros y vencimientos.
+  </Card>
+  <Card title="VeriFactu" icon="shield-check" href="/guides/verifactu">
+    Registros encadenados con hash SHA-256 y QR tributario conforme a la AEAT.
+  </Card>
+  <Card title="Configuración" icon="sliders" href="/guides/preferencias">
+    Datos del emisor, series de facturación, plantillas, correo SMTP y más.
+  </Card>
+</CardGroup>

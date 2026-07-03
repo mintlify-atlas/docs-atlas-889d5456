@@ -1,47 +1,194 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Instalar y ejecutar LEFA en tu equipo"
+sidebarTitle: "Inicio rápido"
+description: "Instala LEFA en Linux o Windows, configura tus datos de emisor y emite tu primera factura paso a paso en menos de diez minutos."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
+Esta guía te lleva desde cero hasta tu primera factura emitida en aproximadamente diez minutos. Verás cómo obtener LEFA, arrancarlo por primera vez, rellenar tus datos como emisor y completar el flujo completo de facturación: elegir cliente, añadir líneas e importe, y generar el PDF y el XML Facturae de forma automática.
 
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
+## Requisitos previos
 
-## Prerequisites
+Antes de empezar comprueba que tienes lo siguiente:
 
-Before you begin, you must have:
+| Requisito | Detalle |
+|---|---|
+| **Python 3.10 o superior** | Disponible en [python.org](https://www.python.org/downloads/). En Linux suele venir instalado; en Windows descarga el instalador oficial y marca *Add Python to PATH*. |
+| **Entorno de escritorio activo** | Necesario para que `keyring` pueda guardar la contraseña SMTP en el llavero del sistema. En Linux (GNOME, KDE, XFCE…) y en Windows el escritorio normal es suficiente. |
+| **Conexión a internet (solo la primera vez)** | `run_app.py` descarga las dependencias de PyPI al crear el entorno virtual. Las ejecuciones posteriores son completamente offline. |
 
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
+<Note>
+  En Linux, si ejecutas LEFA en una sesión SSH sin entorno gráfico (*headless*), el módulo `keyring` puede fallar al no encontrar el demonio D-Bus de sesión. Para uso normal en escritorio no se requiere ninguna configuración adicional.
+</Note>
 
-## Get started
+## Inicio rápido (recomendado)
 
-<Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+El script `run_app.py` automatiza todo el proceso: comprueba si existe el entorno virtual `.venv`, lo crea si no existe, instala las dependencias desde `requirements.txt` y arranca la aplicación. Es la forma más sencilla de poner LEFA en marcha sin pasos adicionales.
 
-    ```bash
-    npm install your-package
-    ```
-  </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+<CodeGroup>
 
-    ```bash
-    your-cli init
-    ```
-  </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+```bash Linux
+cd LEFA
+python3 run_app.py
+```
 
-    ```bash
-    your-cli start
-    ```
-  </Step>
-</Steps>
+```powershell Windows
+cd LEFA
+python run_app.py
+```
+
+</CodeGroup>
+
+La primera vez verás mensajes como *«Creando entorno virtual…»* e *«Instalando dependencias…»*. En las ejecuciones posteriores el arranque es inmediato porque el entorno ya existe.
 
 <Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
-
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
+  Si el directorio del proyecto no tiene permisos de escritura (por ejemplo en una instalación en `/usr/share/`), `run_app.py` creará el entorno virtual en `~/.local/share/lefa/.venv` automáticamente.
 </Tip>
+
+## Instalación manual
+
+Si prefieres controlar cada paso o integrar LEFA en un flujo de trabajo propio, puedes instalar y ejecutar la aplicación manualmente:
+
+<Steps>
+
+  <Step title="Clona o descarga el proyecto">
+    Descarga el repositorio desde [github.com/entreunosyceros/lefa](https://github.com/entreunosyceros/lefa) y accede a la carpeta raíz:
+
+    ```bash
+    cd LEFA
+    ```
+  </Step>
+
+  <Step title="Crea el entorno virtual">
+    <CodeGroup>
+
+    ```bash Linux
+    python3 -m venv .venv
+    ```
+
+    ```powershell Windows
+    python -m venv .venv
+    ```
+
+    </CodeGroup>
+  </Step>
+
+  <Step title="Activa el entorno virtual">
+    <CodeGroup>
+
+    ```bash Linux
+    source .venv/bin/activate
+    ```
+
+    ```powershell Windows
+    .venv\Scripts\activate
+    ```
+
+    </CodeGroup>
+  </Step>
+
+  <Step title="Instala las dependencias">
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+    Esto instalará PyQt6, SQLAlchemy, FPDF2, qrcode, keyring y el resto de paquetes necesarios.
+  </Step>
+
+  <Step title="Arranca la aplicación">
+    ```bash
+    python main.py
+    ```
+
+    `main.py` inicializa la base de datos SQLite en `~/.lefa/lefa.db` y abre la ventana principal de LEFA.
+  </Step>
+
+</Steps>
+
+## Primera ejecución
+
+Al arrancar por primera vez, LEFA comprueba si la base de datos está vacía. Si es así, crea automáticamente **tres clientes de ejemplo** para que puedas explorar la interfaz sin necesidad de introducir datos manualmente.
+
+Verás un **diálogo de bienvenida** que te orienta sobre los pasos iniciales recomendados: configurar tus datos de empresa en *Herramientas → Preferencias* y, opcionalmente, configurar el correo SMTP en *Herramientas → Configurar correo electrónico*. Puedes cerrar este diálogo en cualquier momento; todas estas opciones siguen accesibles desde el menú superior.
+
+<Tip>
+  LEFA coloca un icono en la **bandeja del sistema** al arrancar. Si cierras la ventana principal con el botón ✕, la aplicación sigue ejecutándose en la bandeja. Para salir completamente usa **Archivo → Salir** o el menú contextual del icono de bandeja.
+</Tip>
+
+## Configura tus datos
+
+Antes de emitir facturas reales debes rellenar los datos de tu empresa emisora. Ve a **Herramientas → Preferencias…** y completa la sección *Empresa emisora*:
+
+| Campo | Descripción |
+|---|---|
+| **Nombre / razón social** | Tu nombre completo o el de tu actividad |
+| **NIF** | Tu número de identificación fiscal |
+| **Dirección** | Dirección fiscal completa |
+| **Teléfono y email** | Datos de contacto que aparecerán en el PDF |
+| **IBAN** | Necesario para la generación correcta del XML Facturae y para envíos a la administración pública (FACe) |
+
+También puedes configurar en esta misma pantalla los valores por defecto de IVA e IRPF, el formato y las series de numeración de facturas, la carpeta donde se guardarán los PDFs y el logotipo que aparecerá en los documentos generados.
+
+<Warning>
+  Sin IBAN configurado, el XML Facturae se generará igualmente, pero la plataforma FACe (facturas a la administración pública) rechazará el fichero. Si facturas a organismos públicos, rellena este campo antes de emitir.
+</Warning>
+
+## Emite tu primera factura
+
+Con los datos de emisor guardados ya puedes crear y emitir tu primera factura:
+
+<Steps>
+
+  <Step title="Abre la pestaña Nueva Factura">
+    En la barra de pestañas de la ventana principal, haz clic en **Nueva Factura**. LEFA recordará el último cliente utilizado si ya existe alguno en la base de datos.
+  </Step>
+
+  <Step title="Selecciona el cliente">
+    Elige al destinatario de la factura en el desplegable *Cliente*. Si el cliente aún no existe, ve a **Clientes → Nuevo cliente…** en el menú superior para crearlo con nombre, NIF y, opcionalmente, dirección de correo electrónico.
+  </Step>
+
+  <Step title="Elige la serie y el vencimiento">
+    Selecciona la **serie de facturación** (por defecto `FACT`) y el **vencimiento** en días desde la fecha de emisión. LEFA asignará el número correlativo automáticamente al emitir.
+  </Step>
+
+  <Step title="Añade las líneas de la factura">
+    Haz clic en **Añadir línea** para introducir una descripción, cantidad y precio manualmente. También puedes usar:
+
+    - **Añadir servicio** — selecciona un concepto del catálogo de servicios con precio e IVA predefinidos.
+    - **Añadir plantilla** — rellena la línea desde una plantilla reutilizable (*Herramientas → Plantillas de líneas…*).
+
+    LEFA calcula el subtotal, IVA e IRPF en tiempo real conforme añades líneas.
+  </Step>
+
+  <Step title="Emite la factura">
+    Haz clic en **Emitir Factura**. LEFA realizará de forma automática y simultánea:
+
+    - Asignación del número oficial correlativo dentro de la serie elegida.
+    - Generación del **PDF** en la carpeta configurada en Preferencias (por defecto `~/.lefa/facturas_pdf/`).
+    - Generación del **XML Facturae** en `~/.lefa/facturas_xml/`.
+    - Cálculo y encadenamiento del **registro VeriFactu** (hash SHA-256) e impresión del QR tributario en el PDF.
+
+    La factura pasa al estado *Emitida* y queda bloqueada para edición. Puedes consultarla en cualquier momento desde la pestaña **Listado**.
+  </Step>
+
+  <Step title="Envía la factura por correo (opcional)">
+    Si has configurado tu cuenta SMTP en *Herramientas → Configurar correo electrónico…*, pulsa **Enviar por email** para remitir el PDF directamente al cliente desde LEFA. El estado de envío quedará registrado en el Listado con fecha y destinatario.
+  </Step>
+
+</Steps>
+
+## Variables de entorno (opcionales)
+
+LEFA respeta dos variables de entorno que permiten personalizar las rutas del proyecto y del entorno virtual, útiles en instalaciones empaquetadas o configuraciones no estándar:
+
+| Variable | Descripción |
+|---|---|
+| `LEFA_PROJECT_DIR` | Ruta raíz del proyecto. Útil cuando LEFA se instala en una ubicación diferente al directorio de trabajo actual (por ejemplo, un paquete `.deb` en `/usr/share/`). |
+| `LEFA_VENV` | Ruta explícita al entorno virtual que debe usar `run_app.py`. Si no se define, se usa `.venv` dentro del proyecto o `~/.local/share/lefa/.venv` según los permisos del directorio. |
+
+Ejemplo de uso en Linux:
+
+```bash
+export LEFA_PROJECT_DIR=/opt/lefa
+export LEFA_VENV=/opt/lefa/.venv
+python3 /opt/lefa/run_app.py
+```

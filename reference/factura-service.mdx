@@ -1,0 +1,367 @@
+---
+title: "FacturaService: lógica de negocio de facturación en LEFA"
+sidebarTitle: "FacturaService"
+description: "Referencia de FacturaService en LEFA: métodos para crear borradores, emitir, duplicar, rectificar, cobrar y consultar facturas con transacciones SQLite."
+---
+
+`FacturaService` es la capa central de negocio de LEFA que centraliza todas las operaciones transaccionales sobre facturas. Cada método público es estático y opera sobre la base de datos SQLite a través de SQLAlchemy, garantizando integridad en cada escritura mediante contextos de sesión (`session_scope` y `session_scope_immediate`). El servicio también coordina la asignación de numeración correlativa (delegada en `NumeracionService`), la creación de registros VeriFactu encadenados y el guardado de las preferencias del último cliente utilizado.
+
+---
+
+## DTOs
+
+Los objetos de transferencia de datos se definen como `dataclass` de Python y se utilizan para comunicar la capa de interfaz de usuario con `FacturaService` sin exponer directamente los modelos ORM.
+
+### `LineaFacturaDTO`
+
+Representa una línea individual de una factura en tránsito desde la UI.
+
+<ResponseField name="descripcion" type="str" required>
+  Texto descriptivo del concepto o servicio facturado.
+</ResponseField>
+<ResponseField name="cantidad" type="float" required>
+  Número de unidades del concepto.
+</ResponseField>
+<ResponseField name="precio_unitario" type="float" required>
+  Precio por unidad en euros (sin impuestos).
+</ResponseField>
+
+### `TotalesFactura`
+
+Resultado inmutable del cálculo de importes, devuelto por `calcular_totales`.
+
+<ResponseField name="subtotal" type="float">
+  Suma de `cantidad × precio_unitario` para todas las líneas, redondeada a 2 decimales.
+</ResponseField>
+<ResponseField name="iva" type="float">
+  Importe de IVA calculado sobre el subtotal.
+</ResponseField>
+<ResponseField name="irpf" type="float">
+  Retención de IRPF calculada sobre el subtotal.
+</ResponseField>
+<ResponseField name="total" type="float">
+  Importe neto: `subtotal + iva − irpf`.
+</ResponseField>
+
+### `ResumenHoy`
+
+Tres cifras para el panel de inicio de LEFA, calculadas en tiempo real sin analítica adicional.
+
+<ResponseField name="facturas_emitidas_hoy" type="int">
+  Número de facturas con `fecha_emision` igual a hoy y estado distinto de `BORRADOR`.
+</ResponseField>
+<ResponseField name="pendientes_cobrar" type="int">
+  Número de facturas en estado `EMITIDA` (enviadas pero aún no cobradas).
+</ResponseField>
+<ResponseField name="importe_pendiente" type="float">
+  Suma de los totales de todas las facturas en estado `EMITIDA`.
+</ResponseField>
+
+---
+
+## Métodos
+
+### `calcular_totales`
+
+```python
+FacturaService.calcular_totales(
+    lineas: list[LineaFacturaDTO],
+    porc_iva: float,
+    porc_irpf: float,
+) -> TotalesFactura
+```
+
+Cálculo puro en memoria, sin acceso a base de datos, diseñado para actualizarse en tiempo real mientras el usuario edita la factura en la interfaz. Aplica la fórmula `subtotal × (porcentaje / 100)` para IVA e IRPF y redondea cada resultado a dos decimales.
+
+<ParamField body="lineas" type="list[LineaFacturaDTO]" required>
+  Lista de líneas de factura con descripción, cantidad y precio unitario.
+</ParamField>
+<ParamField body="porc_iva" type="float" required>
+  Porcentaje de IVA a aplicar (p. ej. `21.0`).
+</ParamField>
+<ParamField body="porc_irpf" type="float" required>
+  Porcentaje de retención de IRPF a aplicar (p. ej. `15.0`).
+</ParamField>
+
+**Retorna:** `TotalesFactura` con los cuatro importes calculados.
+
+---
+
+### `listar_todas`
+
+```python
+FacturaService.listar_todas() -> list[Factura]
+```
+
+Devuelve todas las facturas almacenadas en la base de datos, incluyendo borradores, ordenadas por `id` descendente. Las relaciones `cliente` y `lineas` se cargan con `joinedload` para evitar consultas N+1 en la UI.
+
+**Retorna:** Lista de objetos `Factura` desvinculados de la sesión (expunged).
+
+---
+
+### `resumen_hoy`
+
+```python
+FacturaService.resumen_hoy() -> ResumenHoy
+```
+
+Calcula en tiempo real las tres métricas del panel de inicio: facturas emitidas hoy, número de facturas pendientes de cobro e importe total pendiente. Ejecuta dos consultas agregadas sobre SQLite.
+
+**Retorna:** `ResumenHoy` con los tres campos poblados.
+
+---
+
+### `listar_por_cliente`
+
+```python
+FacturaService.listar_por_cliente(cliente_id: int) -> list[Factura]
+```
+
+Devuelve las facturas no borrador de un cliente concreto, ordenadas por fecha de emisión descendente y, a igualdad de fecha, por `id` descendente.
+
+<ParamField body="cliente_id" type="int" required>
+  Identificador del cliente en la base de datos.
+</ParamField>
+
+**Retorna:** Lista de `Factura` en estado `EMITIDA` o `COBRADA`.
+
+---
+
+### `total_facturado_cliente`
+
+```python
+FacturaService.total_facturado_cliente(cliente_id: int) -> float
+```
+
+Suma los totales de todas las facturas emitidas y cobradas de un cliente usando `listar_por_cliente` internamente.
+
+<ParamField body="cliente_id" type="int" required>
+  Identificador del cliente.
+</ParamField>
+
+**Retorna:** `float` con el total acumulado en euros, redondeado a 2 decimales.
+
+---
+
+### `obtener_por_id`
+
+```python
+FacturaService.obtener_por_id(factura_id: int) -> Factura | None
+```
+
+Carga una factura por su clave primaria con sus relaciones `cliente`, `lineas` y `factura_rectificada` precargadas.
+
+<ParamField body="factura_id" type="int" required>
+  Identificador de la factura.
+</ParamField>
+
+**Retorna:** `Factura` desvinculada de la sesión, o `None` si no existe.
+
+---
+
+### `guardar_borrador`
+
+```python
+FacturaService.guardar_borrador(
+    cliente_id: int,
+    lineas: list[LineaFacturaDTO],
+    porc_iva: float,
+    porc_irpf: float,
+    factura_id: int | None = None,
+    serie: str | None = None,
+    fecha_vencimiento: date | None = None,
+    factura_rectificada_id: int | None = None,
+    presupuesto_origen_id: int | None = None,
+) -> Factura
+```
+
+Crea una factura nueva en estado `BORRADOR` o actualiza un borrador existente. En ningún caso se asigna número oficial (`numero_factura` permanece `NULL` hasta la emisión). Si se proporciona `factura_rectificada_id`, la serie se fuerza automáticamente a `"RECT"`.
+
+<ParamField body="cliente_id" type="int" required>
+  Cliente al que se emitirá la factura.
+</ParamField>
+<ParamField body="lineas" type="list[LineaFacturaDTO]" required>
+  Líneas de la factura. Debe contener al menos un elemento.
+</ParamField>
+<ParamField body="porc_iva" type="float" required>
+  Porcentaje de IVA (p. ej. `21.0`).
+</ParamField>
+<ParamField body="porc_irpf" type="float" required>
+  Porcentaje de retención de IRPF (p. ej. `15.0`).
+</ParamField>
+<ParamField body="factura_id" type="int | None">
+  Si se indica, actualiza el borrador existente con ese ID en lugar de crear uno nuevo.
+</ParamField>
+<ParamField body="serie" type="str | None">
+  Prefijo de serie (p. ej. `"FACT"`, `"CLI"`). Si es `None`, se lee de las preferencias del emisor.
+</ParamField>
+<ParamField body="fecha_vencimiento" type="date | None">
+  Fecha límite de pago. Si es `None`, se calculará automáticamente en la emisión según `dias_vencimiento` de las preferencias.
+</ParamField>
+<ParamField body="factura_rectificada_id" type="int | None">
+  ID de la factura original que rectifica este borrador. Activa la serie `"RECT"` automáticamente.
+</ParamField>
+<ParamField body="presupuesto_origen_id" type="int | None">
+  ID del presupuesto del que proviene esta factura (trazabilidad bidireccional).
+</ParamField>
+
+**Retorna:** `Factura` en estado `BORRADOR` desvinculada de la sesión.
+
+**Lanza `ValueError` si:**
+- `lineas` está vacía.
+- Se proporciona `factura_id` pero la factura no existe.
+- La factura encontrada con `factura_id` no está en estado `BORRADOR`.
+
+---
+
+### `emitir_factura`
+
+```python
+FacturaService.emitir_factura(factura_id: int) -> Factura
+```
+
+Transacción atómica de emisión usando `BEGIN IMMEDIATE` (SQLite). El flujo interno es:
+
+1. Valida que la factura sea un borrador con al menos una línea.
+2. Obtiene el siguiente correlativo con `NumeracionService.siguiente_secuencia`.
+3. Formatea el número oficial (p. ej. `FACT-2026-0044`).
+4. Fija `fecha_emision` a hoy y calcula `fecha_vencimiento` si no fue establecida.
+5. Genera el registro VeriFactu encadenado (hash SHA-256) dentro de la misma transacción.
+6. Hace commit y, tras él, persiste el JSON VeriFactu en disco.
+
+<ParamField body="factura_id" type="int" required>
+  ID de la factura borrador a emitir.
+</ParamField>
+
+**Retorna:** `Factura` en estado `EMITIDA` con número oficial asignado.
+
+**Lanza `ValueError` si:**
+- La factura no existe.
+- No está en estado `BORRADOR`.
+- No tiene líneas.
+
+---
+
+### `marcar_enviada`
+
+```python
+FacturaService.marcar_enviada(factura_id: int, destinatario: str) -> Factura
+```
+
+Registra el envío exitoso de una factura por correo electrónico: activa el flag `enviada`, guarda la fecha actual en `fecha_envio` y almacena la dirección del destinatario.
+
+<ParamField body="factura_id" type="int" required>
+  ID de la factura enviada.
+</ParamField>
+<ParamField body="destinatario" type="str" required>
+  Dirección de correo electrónico del destinatario (se recortan espacios en blanco).
+</ParamField>
+
+**Retorna:** `Factura` actualizada.
+
+**Lanza `ValueError` si:** la factura no existe.
+
+---
+
+### `duplicar_factura`
+
+```python
+FacturaService.duplicar_factura(factura_id: int) -> Factura
+```
+
+Crea un borrador nuevo copiando el cliente, las líneas, la serie y los porcentajes de impuestos de una factura ya emitida o cobrada. El nuevo borrador no tiene número ni historial de envío; la fecha de vencimiento se recalcula a partir de las preferencias actuales.
+
+<ParamField body="factura_id" type="int" required>
+  ID de la factura a duplicar. Debe estar en estado `EMITIDA` o `COBRADA`.
+</ParamField>
+
+**Retorna:** Nuevo `Factura` en estado `BORRADOR`.
+
+**Lanza `ValueError` si:**
+- La factura no existe.
+- La factura está en estado `BORRADOR` (solo se duplican facturas ya emitidas).
+
+---
+
+### `rectificar_factura`
+
+```python
+FacturaService.rectificar_factura(factura_id: int) -> Factura
+```
+
+Crea un borrador rectificativo (serie `RECT`) vinculado a la factura original mediante `factura_rectificada_id`. Copia las líneas tal cual; el usuario puede modificar importes (p. ej. negativos para devoluciones) antes de emitir.
+
+<ParamField body="factura_id" type="int" required>
+  ID de la factura a rectificar. Debe estar en estado `EMITIDA` o `COBRADA` y no ser ella misma rectificativa.
+</ParamField>
+
+**Retorna:** Nuevo `Factura` en estado `BORRADOR` con serie `RECT`.
+
+**Lanza `ValueError` si:**
+- La factura no existe.
+- No está en estado `EMITIDA` ni `COBRADA`.
+- La factura ya es rectificativa (`es_rectificativa == True`).
+
+---
+
+### `marcar_cobrada`
+
+```python
+FacturaService.marcar_cobrada(factura_id: int) -> Factura
+```
+
+Cambia el estado de una factura de `EMITIDA` a `COBRADA`. No admite transiciones desde otros estados.
+
+<ParamField body="factura_id" type="int" required>
+  ID de la factura a marcar como cobrada.
+</ParamField>
+
+**Retorna:** `Factura` en estado `COBRADA`.
+
+**Lanza `ValueError` si:**
+- La factura no existe.
+- No está en estado `EMITIDA`.
+
+---
+
+## Ejemplo de uso
+
+El siguiente fragmento muestra el flujo completo desde la creación de un borrador hasta su cobro:
+
+```python
+from lefa.services.factura_service import FacturaService, LineaFacturaDTO
+
+# 1. Preparar líneas
+lineas = [
+    LineaFacturaDTO(descripcion="Desarrollo web", cantidad=8.0, precio_unitario=35.0),
+]
+
+# 2. Vista previa de totales (sin tocar la BD)
+totales = FacturaService.calcular_totales(lineas, porc_iva=21.0, porc_irpf=15.0)
+print(f"Total: {totales.total} €")  # → 251.20 €
+
+# 3. Guardar borrador
+borrador = FacturaService.guardar_borrador(
+    cliente_id=1,
+    lineas=lineas,
+    porc_iva=21.0,
+    porc_irpf=15.0,
+    serie="FACT",
+)
+print(borrador.numero_factura)  # → None (todavía borrador)
+
+# 4. Emitir (asigna número y genera registro VeriFactu)
+factura = FacturaService.emitir_factura(borrador.id)
+print(factura.numero_factura)  # → "FACT-2026-0001"
+
+# 5. Registrar el envío por correo
+factura = FacturaService.marcar_enviada(factura.id, "cliente@empresa.com")
+
+# 6. Cobrar
+factura = FacturaService.marcar_cobrada(factura.id)
+print(factura.estado)  # → EstadoFactura.COBRADA
+```
+
+<Note>
+  `emitir_factura` utiliza `BEGIN IMMEDIATE` para garantizar que dos emisiones concurrentes nunca compartan el mismo número correlativo, incluso en entornos con varios procesos que accedan a la misma base de datos SQLite.
+</Note>

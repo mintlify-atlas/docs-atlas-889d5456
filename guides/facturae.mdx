@@ -1,0 +1,110 @@
+---
+title: "Facturae XML: generación automática para FACe y administración"
+sidebarTitle: "Facturae XML"
+description: "LEFA genera automáticamente el XML Facturae al emitir cada factura. Configura IBAN y DIR3 para cumplir los requisitos de FACe y la administración pública."
+---
+
+Al pulsar **Emitir Factura** en LEFA, el programa no solo genera el PDF de la factura: también crea de forma automática el fichero XML en formato **Facturae 3.2.2**, el estándar de factura electrónica exigido por la administración pública española. No hace falta ningún paso adicional ni herramienta externa: el XML queda listo en disco en el mismo instante en que se emite la factura.
+
+## ¿Qué es Facturae?
+
+Facturae es el formato XML de factura electrónica definido por el Ministerio de Hacienda de España (esquema `Facturaev3_2_2.xml`). Es el único formato aceptado por **FACe** (Punto General de Entrada de Facturas Electrónicas de la Administración General del Estado) y por la mayoría de portales de facturación electrónica de comunidades autónomas y ayuntamientos.
+
+Si su actividad incluye facturar a organismos públicos —ayuntamientos, ministerios, universidades públicas, hospitales de la red pública, etc.— necesita entregar el XML Facturae correctamente formado y, en la mayoría de los casos, firmado digitalmente con certificado reconocido antes de subirlo a FACe.
+
+<Note>
+  LEFA genera el XML Facturae bien formado con todos los campos obligatorios. La **firma digital con certificado** (xAdES) requerida para el envío final a FACe es un paso externo que debe realizarse con la herramienta de firma de la AEAT u otro software homologado.
+</Note>
+
+## Generación automática
+
+Cuando se emite una factura desde **Nueva Factura → Emitir Factura**, LEFA genera simultáneamente dos ficheros:
+
+| Fichero | Ubicación |
+|---------|-----------|
+| `{numero_factura}.pdf` | `~/.lefa/facturas_pdf/` |
+| `{numero_factura}.xml` | `~/.lefa/facturas_xml/` |
+
+El nombre del fichero XML coincide con el número de factura, sustituyendo las barras `/` por guiones. Por ejemplo, la factura `FACT-2026-0042` produce `FACT-2026-0042.xml`.
+
+El XML incluye automáticamente:
+
+- Datos de identificación del emisor (NIF, razón social, dirección).
+- Datos del cliente (NIF, razón social, dirección).
+- Líneas de factura con descripción, cantidad, precio unitario y totales.
+- Desglose de IVA e IRPF.
+- Fecha de emisión y fecha de vencimiento.
+- Medio de pago e IBAN del emisor.
+- Tipo de documento (`FC` para facturas ordinarias, `R1` para rectificativas).
+- Códigos DIR3 del cliente, si están configurados.
+
+## Configuración necesaria
+
+Para que el XML sea válido y aceptado por FACe, es imprescindible completar la configuración antes de emitir facturas a la administración.
+
+| Campo | Dónde configurarlo | Obligatorio para FACe |
+|-------|-------------------|-----------------------|
+| **IBAN del emisor** | Herramientas → Preferencias… → *Empresa emisora* | Sí |
+| **Forma de pago** | Herramientas → Preferencias… → *Forma de pago Facturae* | Sí (defecto: `04`) |
+| **DIR3 — Oficina contable** | Ficha del cliente → sección *Facturae / FACe* | Sí (administraciones) |
+| **DIR3 — Órgano gestor** | Ficha del cliente → sección *Facturae / FACe* | Sí (administraciones) |
+| **DIR3 — Unidad tramitadora** | Ficha del cliente → sección *Facturae / FACe* | Sí (administraciones) |
+| **NIF del emisor** | Herramientas → Preferencias… → *Empresa emisora* | Sí |
+| **Razón social del emisor** | Herramientas → Preferencias… → *Empresa emisora* | Sí |
+
+<Warning>
+  **Sin IBAN o sin códigos DIR3, FACe rechazará el fichero.** La plataforma del Estado valida estos campos aunque el XML esté perfectamente formado. Compruebe que el IBAN del emisor está relleno en Preferencias y que los códigos DIR3 de cada cliente de la administración están correctamente introducidos en su ficha antes de emitir la factura.
+</Warning>
+
+## Códigos DIR3
+
+Los códigos **DIR3** (Directorio Común de Unidades y Oficinas) identifican las unidades administrativas destinatarias de la factura dentro de la administración pública española. FACe los usa para enrutar la factura hacia el órgano correcto.
+
+Cada cliente de la administración tiene asignados tres códigos:
+
+| Código DIR3 | Rol en Facturae | Descripción |
+|-------------|----------------|-------------|
+| **Oficina contable** | `RoleTypeCode 01` | Unidad responsable del pago (contabilidad) |
+| **Órgano gestor** | `RoleTypeCode 02` | Unidad que ha tramitado el gasto |
+| **Unidad tramitadora** | `RoleTypeCode 03` | Unidad que gestiona el expediente |
+
+Los códigos DIR3 los proporciona el propio organismo al que va a facturar. Suelen aparecer también en el portal de contratación o en la resolución de adjudicación.
+
+**Cómo configurarlos en LEFA:**
+
+1. Vaya a la pestaña **Clientes**.
+2. Seleccione el cliente de la administración y pulse **Editar**.
+3. Localice la sección **Facturae / FACe**.
+4. Rellene los campos *Oficina contable*, *Órgano gestor* y *Unidad tramitadora*.
+5. Guarde los cambios.
+
+A partir de ese momento, todas las facturas emitidas a ese cliente incluirán los tres centros administrativos en el bloque `<AdministrativeCentre>` del XML.
+
+<Note>
+  Si el cliente no es una administración pública, deje los campos DIR3 en blanco. LEFA solo añade los bloques `AdministrativeCentre` al XML cuando los códigos están rellenos.
+</Note>
+
+## Medio de pago
+
+El campo `PaymentMeans` del XML indica la forma en que se cobrará la factura. El valor predeterminado es `04` (transferencia bancaria), que es el más habitual para autónomos.
+
+| Código | Descripción |
+|--------|-------------|
+| `04` | Transferencia bancaria (predeterminado) |
+
+El medio de pago se puede ajustar en dos niveles:
+
+- **Global:** Herramientas → Preferencias… → *Forma de pago Facturae* (aplica a todas las facturas nuevas).
+- **Por cliente:** Ficha del cliente → sección *Facturae / FACe* → campo *Forma de pago* (sobrescribe el valor global para ese cliente).
+
+Cuando se usa transferencia bancaria (`04`), LEFA añade automáticamente el bloque `<AccountToBeCredited>` con el IBAN del emisor configurado en Preferencias.
+
+## Ubicación de los ficheros XML
+
+Todos los ficheros Facturae se almacenan en:
+
+```
+~/.lefa/facturas_xml/
+```
+
+Puede acceder a esta carpeta directamente desde el explorador de archivos del sistema operativo. Los ficheros también se incluyen en la copia de seguridad generada con **Archivo → Crear copia de seguridad…**

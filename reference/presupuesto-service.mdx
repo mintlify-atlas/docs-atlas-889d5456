@@ -1,0 +1,227 @@
+---
+title: "PresupuestoService: gestión de presupuestos en LEFA"
+sidebarTitle: "PresupuestoService"
+description: "Referencia de PresupuestoService en LEFA: crear, emitir, aceptar, rechazar y convertir presupuestos en facturas con trazabilidad bidireccional."
+---
+
+`PresupuestoService` gestiona el ciclo de vida completo de los presupuestos en LEFA, desde la creación del borrador hasta la conversión en factura. Todos sus métodos son estáticos y operan sobre SQLite mediante SQLAlchemy. La trazabilidad bidireccional entre presupuesto y factura se mantiene automáticamente: al convertir un presupuesto, el campo `factura_id` del presupuesto y el campo `presupuesto_origen_id` de la factura quedan enlazados en la base de datos. La serie de numeración de presupuestos es fija y se obtiene de la constante `SERIE_PRESUPUESTO` definida en `lefa.config`.
+
+---
+
+## DTO
+
+### `LineaPresupuestoDTO`
+
+Objeto de transferencia para líneas de presupuesto desde la interfaz de usuario.
+
+<ResponseField name="descripcion" type="str" required>
+  Descripción del concepto o servicio presupuestado.
+</ResponseField>
+<ResponseField name="cantidad" type="float" required>
+  Número de unidades del concepto.
+</ResponseField>
+<ResponseField name="precio_unitario" type="float" required>
+  Precio por unidad en euros (sin impuestos).
+</ResponseField>
+
+---
+
+## Métodos
+
+### `listar_todos`
+
+```python
+PresupuestoService.listar_todos() -> list[Presupuesto]
+```
+
+Devuelve todos los presupuestos almacenados en la base de datos, independientemente de su estado, ordenados por `id` descendente. Las relaciones `cliente` y `lineas` se cargan con `joinedload`.
+
+**Retorna:** Lista de objetos `Presupuesto` desvinculados de la sesión.
+
+---
+
+### `obtener_por_id`
+
+```python
+PresupuestoService.obtener_por_id(presupuesto_id: int) -> Presupuesto | None
+```
+
+Carga un presupuesto por su clave primaria con las relaciones `cliente` y `lineas` precargadas.
+
+<ParamField body="presupuesto_id" type="int" required>
+  Identificador del presupuesto en la base de datos.
+</ParamField>
+
+**Retorna:** `Presupuesto` desvinculado de la sesión, o `None` si no existe.
+
+---
+
+### `guardar_borrador`
+
+```python
+PresupuestoService.guardar_borrador(
+    cliente_id: int,
+    lineas: list[LineaPresupuestoDTO],
+    porc_iva: float,
+    porc_irpf: float,
+    presupuesto_id: int | None = None,
+    validez_hasta: date | None = None,
+) -> Presupuesto
+```
+
+Crea un presupuesto nuevo en estado `BORRADOR` o actualiza uno existente. El número oficial (`numero_presupuesto`) permanece `NULL` hasta la emisión. La serie se asigna automáticamente a partir de `SERIE_PRESUPUESTO`.
+
+<ParamField body="cliente_id" type="int" required>
+  Cliente destinatario del presupuesto.
+</ParamField>
+<ParamField body="lineas" type="list[LineaPresupuestoDTO]" required>
+  Líneas del presupuesto. Debe contener al menos un elemento.
+</ParamField>
+<ParamField body="porc_iva" type="float" required>
+  Porcentaje de IVA (p. ej. `21.0`).
+</ParamField>
+<ParamField body="porc_irpf" type="float" required>
+  Porcentaje de retención de IRPF (p. ej. `15.0`).
+</ParamField>
+<ParamField body="presupuesto_id" type="int | None">
+  Si se indica, actualiza el borrador existente con ese ID. Las líneas anteriores se eliminan y se reemplazan por las nuevas.
+</ParamField>
+<ParamField body="validez_hasta" type="date | None">
+  Fecha de vencimiento de la oferta. Si es `None`, se calculará automáticamente como hoy + 30 días durante la emisión.
+</ParamField>
+
+**Retorna:** `Presupuesto` en estado `BORRADOR` desvinculado de la sesión.
+
+**Lanza `ValueError` si:**
+- `lineas` está vacía.
+- Se proporciona `presupuesto_id` pero el presupuesto no existe.
+- El presupuesto encontrado no está en estado `BORRADOR`.
+
+---
+
+### `emitir_presupuesto`
+
+```python
+PresupuestoService.emitir_presupuesto(presupuesto_id: int) -> Presupuesto
+```
+
+Asigna número correlativo y fecha de emisión al presupuesto. Si `validez_hasta` no fue establecida en el borrador, se calcula automáticamente como hoy + 30 días. La numeración se obtiene mediante `NumeracionService.siguiente_secuencia_presupuesto`, que mantiene una secuencia independiente de las facturas.
+
+<ParamField body="presupuesto_id" type="int" required>
+  ID del presupuesto borrador a emitir.
+</ParamField>
+
+**Retorna:** `Presupuesto` en estado `EMITIDO` con número oficial asignado.
+
+**Lanza `ValueError` si:**
+- El presupuesto no existe.
+- No está en estado `BORRADOR`.
+- No tiene líneas.
+
+---
+
+### `aceptar`
+
+```python
+PresupuestoService.aceptar(presupuesto_id: int) -> Presupuesto
+```
+
+Marca un presupuesto emitido como aceptado por el cliente. Solo es posible si el presupuesto está en estado `EMITIDO`.
+
+<ParamField body="presupuesto_id" type="int" required>
+  ID del presupuesto a aceptar.
+</ParamField>
+
+**Retorna:** `Presupuesto` en estado `ACEPTADO`.
+
+**Lanza `ValueError` si:**
+- El presupuesto no existe.
+- No está en estado `EMITIDO`.
+
+---
+
+### `rechazar`
+
+```python
+PresupuestoService.rechazar(presupuesto_id: int) -> Presupuesto
+```
+
+Marca un presupuesto como rechazado. Acepta presupuestos tanto en estado `EMITIDO` como `ACEPTADO` (un cliente puede retractarse de su aceptación).
+
+<ParamField body="presupuesto_id" type="int" required>
+  ID del presupuesto a rechazar.
+</ParamField>
+
+**Retorna:** `Presupuesto` en estado `RECHAZADO`.
+
+**Lanza `ValueError` si:**
+- El presupuesto no existe.
+- El estado no es `EMITIDO` ni `ACEPTADO`.
+
+---
+
+### `convertir_a_factura`
+
+```python
+PresupuestoService.convertir_a_factura(presupuesto_id: int) -> int
+```
+
+Convierte un presupuesto en un borrador de factura, copiando cliente, líneas y porcentajes de impuestos. Si el presupuesto estaba solo `EMITIDO`, se acepta automáticamente antes de la conversión. Tras crear el borrador de factura, el presupuesto pasa al estado `CONVERTIDO` y su campo `factura_id` queda enlazado con el ID del nuevo borrador, estableciendo la trazabilidad bidireccional.
+
+<ParamField body="presupuesto_id" type="int" required>
+  ID del presupuesto a convertir. Debe estar en estado `EMITIDO` o `ACEPTADO`.
+</ParamField>
+
+**Retorna:** `int` con el ID del borrador de factura recién creado.
+
+**Lanza `ValueError` si:**
+- El presupuesto no existe.
+- Ya fue convertido (`CONVERTIDO`).
+- Está en estado `RECHAZADO`.
+- Está en estado `BORRADOR` (debe emitirse primero).
+
+---
+
+## Ejemplo de uso: flujo completo de presupuesto a factura
+
+```python
+from lefa.services.presupuesto_service import PresupuestoService, LineaPresupuestoDTO
+from lefa.services.factura_service import FacturaService
+from lefa.services.pdf_service import PDFService
+from lefa.services.presupuesto_pdf_service import PresupuestoPDFService
+
+# 1. Crear borrador de presupuesto
+lineas = [
+    LineaPresupuestoDTO(descripcion="Diseño de logotipo", cantidad=1.0, precio_unitario=450.0),
+    LineaPresupuestoDTO(descripcion="Manual de identidad", cantidad=1.0, precio_unitario=250.0),
+]
+borrador = PresupuestoService.guardar_borrador(
+    cliente_id=3,
+    lineas=lineas,
+    porc_iva=21.0,
+    porc_irpf=15.0,
+)
+
+# 2. Emitir (asigna número, p. ej. PRES-2026-0002)
+presupuesto = PresupuestoService.emitir_presupuesto(borrador.id)
+print(presupuesto.numero_presupuesto)  # → "PRES-2026-0002"
+
+# 3. Generar PDF del presupuesto para enviar al cliente
+from lefa.services.presupuesto_pdf_service import PresupuestoPDFService
+ruta_pdf = PresupuestoPDFService.generar(presupuesto)
+
+# 4. El cliente acepta la oferta
+presupuesto = PresupuestoService.aceptar(presupuesto.id)
+
+# 5. Convertir a borrador de factura (trazabilidad automática)
+factura_id = PresupuestoService.convertir_a_factura(presupuesto.id)
+
+# 6. Emitir la factura resultante
+factura = FacturaService.emitir_factura(factura_id)
+print(factura.numero_factura)       # → "FACT-2026-0005"
+print(factura.presupuesto_origen_id)  # → presupuesto.id
+```
+
+<Note>
+  `convertir_a_factura` abre una sesión para leer el presupuesto y sus líneas, luego la cierra antes de llamar a `FacturaService.guardar_borrador` (que abre su propia sesión). Esto evita tener dos sesiones anidadas activas sobre la misma conexión SQLite.
+</Note>

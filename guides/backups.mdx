@@ -1,0 +1,94 @@
+---
+title: "Copias de seguridad y restauración de datos en LEFA"
+sidebarTitle: "Copias de seguridad"
+description: "Genera copias de seguridad ZIP desde LEFA con toda tu base de datos, PDFs, XMLs y registros VeriFactu, y restáuralas en cualquier equipo."
+---
+
+Como LEFA funciona completamente en local —sin nube ni servidores externos—, todos tus datos viven en tu propio equipo. Eso significa que realizar copias de seguridad periódicas es la única forma de protegerlos frente a un fallo de disco, un borrado accidental o un cambio de equipo. LEFA incluye una herramienta integrada que empaqueta todo lo necesario en un único archivo ZIP con un solo clic.
+
+## Crear una copia de seguridad
+
+Ve a **Archivo → Crear copia de seguridad…** y elige la carpeta de destino. LEFA generará un archivo ZIP con el nombre `backup_YYYY-MM-DD.zip` (por ejemplo, `backup_2026-06-18.zip`).
+
+El ZIP contiene los siguientes recursos:
+
+| Entrada en el ZIP | Descripción |
+|---|---|
+| `lefa.db` | Base de datos SQLite completa (clientes, facturas, presupuestos, servicios…) |
+| `preferencias.json` | Preferencias de la aplicación (emisor, IVA por defecto, formato de numeración…) |
+| `smtp_config.json` | Configuración del servidor SMTP (host, puerto, usuario…) |
+| `facturas_pdf/` | Todos los PDFs de facturas generados |
+| `presupuestos_pdf/` | Todos los PDFs de presupuestos generados |
+| `facturas_xml/` | Ficheros Facturae (XML) generados al emitir |
+| `verifactu/registros/` | Registros encadenados VeriFactu en formato JSON |
+
+<Warning>
+  La **contraseña SMTP** se almacena exclusivamente en el llavero del sistema operativo (keyring) y **no se incluye en el ZIP**. Si restauras la copia en otro equipo o en el mismo tras una reinstalación, tendrás que introducir la contraseña de correo de nuevo.
+</Warning>
+
+## Lo que NO incluye el ZIP
+
+El único dato que queda fuera del backup es la contraseña de tu cuenta de correo. Esta contraseña se guarda de forma segura en el llavero del sistema (GNOME Keyring en Linux, Credential Manager en Windows) y LEFA nunca la escribe en disco en texto plano. Tras restaurar, vuelve a configurarla en **Herramientas → Configurar correo electrónico…**
+
+## Restaurar desde una copia de seguridad
+
+<Note>
+  Para restaurar, copia el contenido del ZIP a la carpeta `~/.lefa` en Linux/macOS, o a `%USERPROFILE%\.lefa` en Windows. Si la carpeta ya existe, reemplaza su contenido. A continuación, abre LEFA normalmente: cargará la base de datos y la configuración del backup.
+
+  Después de restaurar, ve a **Herramientas → Configurar correo electrónico…** e introduce de nuevo la contraseña SMTP, ya que no se incluye en el backup.
+</Note>
+
+Los pasos concretos son:
+
+1. Descomprime el ZIP de backup.
+2. Copia (o mueve) los archivos extraídos a `~/.lefa/` (Linux/macOS) o `%USERPROFILE%\.lefa\` (Windows), reemplazando los existentes si los hubiera.
+3. Abre LEFA. La aplicación detectará automáticamente la base de datos y la configuración restauradas.
+4. Ve a **Herramientas → Configurar correo electrónico…** y vuelve a introducir la contraseña SMTP.
+
+## Copia manual
+
+Si prefieres hacer una copia rápida sin pasar por el menú, puedes copiar directamente la carpeta `~/.lefa` a un pendrive o disco externo.
+
+**Linux / macOS:**
+
+```bash
+cp -a ~/.lefa /ruta/a/pendrive/lefa-backup-$(date +%Y%m%d)
+```
+
+**Windows:**
+
+Copia la carpeta `%USERPROFILE%\.lefa` a un USB o disco externo mediante el Explorador de archivos o el comando:
+
+```powershell
+xcopy "%USERPROFILE%\.lefa" "D:\lefa-backup" /E /I /H
+```
+
+La estructura que se copiará es la misma que genera el ZIP automático:
+
+| Archivo / carpeta | Contenido |
+|---|---|
+| `lefa.db` | Base de datos completa |
+| `facturas_pdf/` | PDFs de facturas |
+| `presupuestos_pdf/` | PDFs de presupuestos |
+| `facturas_xml/` | Facturae (XML) |
+| `verifactu/registros/` | Registros VeriFactu |
+| `smtp_config.json` | Configuración SMTP (sin contraseña) |
+| `preferencias.json` | Preferencias de la aplicación |
+
+## Recomendaciones
+
+- Haz copias de seguridad con **periodicidad semanal o mensual**, según el volumen de facturas que emitas.
+- Guarda el ZIP en al menos **dos ubicaciones distintas** (por ejemplo, un pendrive y una carpeta en otro disco).
+- Si restauras en otro equipo, copia la carpeta de vuelta a `~/.lefa` (o `%USERPROFILE%\.lefa` en Windows) y reconfigura la contraseña SMTP mediante **Herramientas → Configurar correo electrónico…**
+- Antes de una actualización importante de LEFA o de tu sistema operativo, crea una copia de seguridad como precaución.
+
+## Variables de entorno
+
+En instalaciones empaquetadas o configuraciones especiales, LEFA reconoce dos variables de entorno opcionales que pueden afectar a la ubicación de los archivos:
+
+| Variable | Descripción |
+|---|---|
+| `LEFA_PROJECT_DIR` | Raíz del proyecto (útil en instalaciones empaquetadas para apuntar a una ubicación no estándar) |
+| `LEFA_VENV` | Ruta explícita al entorno virtual de Python utilizado por LEFA |
+
+En la mayoría de instalaciones domésticas estas variables no son necesarias y LEFA usa las rutas predeterminadas bajo `~/.lefa`.

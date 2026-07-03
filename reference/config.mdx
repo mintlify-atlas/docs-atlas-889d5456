@@ -1,0 +1,263 @@
+---
+title: "Constantes y rutas de configuración de LEFA"
+sidebarTitle: "Constantes"
+description: "Referencia de las constantes, rutas de datos y valores por defecto definidos en config.py de LEFA: directorios, tipos de IVA, series y keyring."
+---
+
+El archivo `lefa/config.py` es el único punto de verdad para todas las rutas de datos locales y los valores constantes de la aplicación. Cualquier otro módulo que necesite una ruta, un tipo impositivo o una serie de facturación lo importa directamente desde aquí; nunca se repiten literales en el resto del código.
+
+## Rutas de datos
+
+Toda la persistencia de LEFA es local. Las rutas se construyen a partir de `Path.home()`, por lo que el directorio raíz siempre se sitúa dentro del perfil del usuario actual, independientemente de dónde esté instalada la aplicación.
+
+| Constante | Ruta en disco | Descripción |
+|---|---|---|
+| `APP_DATA_DIR` | `~/.lefa` | Directorio raíz de datos de LEFA. |
+| `DATABASE_PATH` | `~/.lefa/lefa.db` | Base de datos SQLite principal. |
+| `PDF_OUTPUT_DIR` | `~/.lefa/facturas_pdf` | PDFs de facturas generadas. |
+| `PRESUPUESTOS_PDF_DIR` | `~/.lefa/presupuestos_pdf` | PDFs de presupuestos generados. |
+| `SMTP_CONFIG_PATH` | `~/.lefa/smtp_config.json` | Configuración del servidor de correo SMTP. |
+| `PREFERENCIAS_PATH` | `~/.lefa/preferencias.json` | Preferencias del autónomo (IVA, emisor, formato, etc.). |
+| `VERIFACTU_REGISTROS_DIR` | `~/.lefa/verifactu/registros` | Registros JSON inmutables encadenados para VeriFactu. |
+| `FACTURAE_OUTPUT_DIR` | `~/.lefa/facturas_xml` | Ficheros XML en formato Facturae 3.2. |
+
+```python
+from pathlib import Path
+
+APP_DATA_DIR           = Path.home() / ".lefa"
+DATABASE_PATH          = APP_DATA_DIR / "lefa.db"
+PDF_OUTPUT_DIR         = APP_DATA_DIR / "facturas_pdf"
+PRESUPUESTOS_PDF_DIR   = APP_DATA_DIR / "presupuestos_pdf"
+SMTP_CONFIG_PATH       = APP_DATA_DIR / "smtp_config.json"
+PREFERENCIAS_PATH      = APP_DATA_DIR / "preferencias.json"
+VERIFACTU_REGISTROS_DIR = APP_DATA_DIR / "verifactu" / "registros"
+FACTURAE_OUTPUT_DIR    = APP_DATA_DIR / "facturas_xml"
+```
+
+---
+
+## VeriFactu
+
+LEFA incluye soporte para el sistema de facturación verificable de la AEAT. Las dos constantes siguientes controlan el endpoint de envío y si el modo VeriFactu está activo.
+
+<ResponseField name="VERIFACTU_URL_BASE" type="str">
+  URL base de la Agencia Tributaria para el envío de registros VeriFactu (entorno de **producción**).
+
+  ```
+  https://www2.agenciatributaria.gob.es
+  ```
+
+  Para pruebas, la AEAT pone a disposición el host `prewww2.aeat.es`.
+</ResponseField>
+
+<ResponseField name="VERIFACTU_MODO_VERIFACTU" type="bool" default="False">
+  Activa o desactiva el modo VeriFactu (envío real a la AEAT). Por defecto es `False`: LEFA genera el hash encadenado y el QR tributario con la leyenda *SISTEMA INFORMÁTICO NO VERIFICADO*, pero no transmite los registros.
+
+  ```python
+  VERIFACTU_MODO_VERIFACTU = False  # No-Verifactu hasta activar envío a AEAT
+  ```
+</ResponseField>
+
+<Note>
+  El módulo `lefa/verifactu/` genera siempre el registro local y el QR tributario en el PDF, independientemente del valor de `VERIFACTU_MODO_VERIFACTU`. Solo el envío a la AEAT queda desactivado cuando la constante es `False`.
+</Note>
+
+---
+
+## Impuestos por defecto
+
+Estas constantes definen los tipos impositivos habituales para autónomos en España y los valores que se preseleccionan al crear una nueva factura.
+
+<ResponseField name="IVA_OPCIONES" type="tuple[float, ...]">
+  Tipos de IVA disponibles en los desplegables de la interfaz.
+
+  ```python
+  IVA_OPCIONES = (21.0, 10.0, 4.0, 0.0)
+  ```
+</ResponseField>
+
+<ResponseField name="IRPF_OPCIONES" type="tuple[float, ...]">
+  Tipos de IRPF disponibles en los desplegables de la interfaz.
+
+  ```python
+  IRPF_OPCIONES = (15.0, 7.0, 0.0)
+  ```
+</ResponseField>
+
+<ResponseField name="DEFAULT_IVA_PORCENTAJE" type="float" default="21.0">
+  Tipo de IVA que se aplica por defecto al crear una nueva factura. Puede cambiarse en **Herramientas → Preferencias**.
+
+  ```python
+  DEFAULT_IVA_PORCENTAJE = 21.0
+  ```
+</ResponseField>
+
+<ResponseField name="DEFAULT_IRPF_PORCENTAJE" type="float" default="15.0">
+  Retención de IRPF que se aplica por defecto al crear una nueva factura. Puede cambiarse en **Herramientas → Preferencias**.
+
+  ```python
+  DEFAULT_IRPF_PORCENTAJE = 15.0
+  ```
+</ResponseField>
+
+---
+
+## Series
+
+LEFA admite varias series de numeración con correlativo independiente. Las constantes siguientes definen las series predefinidas y el prefijo que se usa cuando no hay ninguna configuración personalizada.
+
+<ResponseField name="SERIE_PRESUPUESTO" type="str" default='"PRES"'>
+  Serie reservada para la numeración de presupuestos.
+
+  ```python
+  SERIE_PRESUPUESTO = "PRES"
+  ```
+</ResponseField>
+
+<ResponseField name="SERIES_POR_DEFECTO" type="tuple[str, ...]">
+  Conjunto de series que se inicializa en las preferencias en una instalación nueva.
+
+  ```python
+  SERIES_POR_DEFECTO = ("FACT", "PRES", "PROFORMA", "RECT")
+  ```
+
+  La serie `RECT` se utiliza automáticamente al rectificar una factura existente.
+</ResponseField>
+
+<ResponseField name="SERIE_FACTURA_PREFIX" type="str" default='"FACT"'>
+  Prefijo de la serie de facturación general. Es el fallback cuando `series_facturacion` está vacío en las preferencias.
+
+  ```python
+  SERIE_FACTURA_PREFIX = "FACT"
+  ```
+</ResponseField>
+
+---
+
+## Keyring
+
+La contraseña SMTP se almacena en el llavero del sistema operativo (GNOME Keyring, KWallet o Credential Manager en Windows) mediante la biblioteca `keyring`. Nunca se escribe en disco en texto plano.
+
+<ResponseField name="KEYRING_SERVICE" type="str" default='"lefa-smtp"'>
+  Nombre de servicio con el que se registra la entrada en el llavero.
+
+  ```python
+  KEYRING_SERVICE = "lefa-smtp"
+  ```
+</ResponseField>
+
+<ResponseField name="KEYRING_USER" type="str" default='"password"'>
+  Nombre de usuario bajo el que se guarda la contraseña en el llavero.
+
+  ```python
+  KEYRING_USER = "password"
+  ```
+</ResponseField>
+
+<Note>
+  En servidores Linux sin escritorio gráfico (*headless*) o en conexiones SSH sin sesión D-Bus activa, `keyring` puede no encontrar el demonio del llavero (GNOME Keyring o KWallet) y lanzar una excepción. En esos entornos se recomienda ejecutar LEFA desde una sesión de escritorio.
+</Note>
+
+---
+
+## Función `ensure_directories()`
+
+`ensure_directories()` se invoca automáticamente al arrancar LEFA (antes de mostrar la interfaz) y garantiza que todas las carpetas de datos existan. Es idempotente: si los directorios ya existen, no hace nada.
+
+```python
+def ensure_directories() -> None:
+    """Crea las carpetas necesarias si no existen."""
+    APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    PDF_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    PRESUPUESTOS_PDF_DIR.mkdir(parents=True, exist_ok=True)
+    VERIFACTU_REGISTROS_DIR.mkdir(parents=True, exist_ok=True)
+    FACTURAE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+```
+
+Los directorios creados son `~/.lefa`, `~/.lefa/facturas_pdf`, `~/.lefa/presupuestos_pdf`, `~/.lefa/verifactu/registros` y `~/.lefa/facturas_xml`. La carpeta `~/.lefa/smtp_config.json` y `~/.lefa/preferencias.json` son archivos, no directorios, por lo que su carpeta padre (`APP_DATA_DIR`) ya queda cubierta por la primera llamada.
+
+---
+
+## Numeración
+
+`NumeracionService` (en `lefa/services/numeracion_service.py`) genera los números de factura a partir de tres variables: la serie, el año de emisión y la secuencia correlativa. La plantilla de formato se selecciona mediante un identificador de cadena (`formato_id`) que se almacena en las preferencias del autónomo bajo la clave `formato_numeracion`.
+
+### Formatos disponibles
+
+El diccionario `FORMATOS_NUMERACION` asocia cada identificador con una plantilla de marcadores (`{serie}`, `{anio}`, `{seq}`):
+
+| `formato_id` | Plantilla | Ejemplo con serie `FACT`, año `2026`, seq `1` |
+|---|---|---|
+| `fact_anio_4` | `{serie}-{anio}-{seq}` | `FACT-2026-0001` |
+| `anio_3` | `{anio}-{seq}` | `2026-001` |
+| `serie_anio_3` | `{serie}-{anio}-{seq}` | `F-2026-001` |
+| `serie_anio_compact` | `{serie}{anio}-{seq}` | `FAC2026-001` |
+| `seq4_anio` | `{seq}/{anio}` | `0001/2026` |
+| `serie_seq3` | `{serie}-{seq}` | `WEB-001` |
+
+El número de dígitos del campo `{seq}` se controla con la preferencia `digitos_secuencia` (por defecto `4`). El valor por defecto de `formato_numeracion` es `"fact_anio_4"`.
+
+<Note>
+  Los formatos que no incluyen `{anio}` (por ejemplo `serie_seq3`) mantienen un correlativo continuo sin reiniciarse al cambiar de ejercicio. Los formatos que no incluyen `{serie}` comparten correlativo entre todas las series.
+</Note>
+
+### `NumeracionService.siguiente_secuencia()`
+
+Calcula el siguiente número correlativo disponible consultando las facturas ya emitidas en la base de datos.
+
+```python
+NumeracionService.siguiente_secuencia(
+    session: Session,
+    serie: str,
+    anio: int,
+    formato_id: str,
+    digitos: int = 4,
+) -> int
+```
+
+| Parámetro | Tipo | Descripción |
+|---|---|---|
+| `session` | `sqlalchemy.orm.Session` | Sesión activa de SQLAlchemy. |
+| `serie` | `str` | Serie de facturación (p. ej. `"FACT"`, `"RECT"`). |
+| `anio` | `int` | Ejercicio fiscal (p. ej. `2026`). |
+| `formato_id` | `str` | Identificador del formato de numeración (ver tabla anterior). |
+| `digitos` | `int` | Número de dígitos del correlativo. Por defecto `4`. |
+
+Devuelve el entero siguiente al mayor correlativo encontrado en la base de datos para la combinación de serie y año indicada. Si no existe ninguna factura previa, devuelve `1`.
+
+### `NumeracionService.formatear_numero()`
+
+Genera la cadena del número de factura a partir de sus componentes.
+
+```python
+NumeracionService.formatear_numero(
+    serie: str,
+    anio: int,
+    secuencia: int,
+    formato_id: str,
+    digitos: int = 4,
+) -> str
+```
+
+| Parámetro | Tipo | Descripción |
+|---|---|---|
+| `serie` | `str` | Serie de facturación. |
+| `anio` | `int` | Año de emisión. |
+| `secuencia` | `int` | Número correlativo. |
+| `formato_id` | `str` | Identificador del formato de numeración. |
+| `digitos` | `int` | Número de dígitos del correlativo. Por defecto `4`. |
+
+**Ejemplo:**
+
+```python
+from lefa.services.numeracion_service import NumeracionService
+
+numero = NumeracionService.formatear_numero(
+    serie="FACT",
+    anio=2026,
+    secuencia=42,
+    formato_id="fact_anio_4",
+    digitos=4,
+)
+# → "FACT-2026-0042"
+```

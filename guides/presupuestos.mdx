@@ -1,0 +1,105 @@
+---
+title: "Presupuestos y conversión a factura en LEFA"
+sidebarTitle: "Presupuestos"
+description: "Crea presupuestos comerciales en LEFA, gestiona su ciclo de vida y conviértelos en facturas con trazabilidad bidireccional automática."
+---
+
+LEFA incluye un módulo de presupuestos pensado para el flujo real de un autónomo: envías una oferta al cliente, él la acepta y, con un solo clic, el presupuesto se convierte en una factura lista para emitir. Toda la trazabilidad queda registrada en la base de datos local de forma bidireccional, de modo que siempre puedes saber qué factura nació de qué presupuesto y viceversa.
+
+## Estados del presupuesto
+
+El ciclo de vida de un presupuesto está definido por el enum `EstadoPresupuesto`:
+
+| Estado | Descripción |
+|--------|-------------|
+| **Borrador** | En preparación, sin número oficial. Editable libremente. |
+| **Emitido** | Número asignado y PDF generado. Enviado al cliente para su valoración. |
+| **Aceptado** | El cliente ha confirmado que acepta la oferta. |
+| **Convertido** | Se ha creado una factura a partir de este presupuesto. Enlazado al borrador de factura resultante. |
+| **Rechazado** | El cliente ha declinado la oferta. No puede convertirse en factura. |
+
+<Note>
+  Los presupuestos no tienen validez fiscal. LEFA no genera XML Facturae ni registros VeriFactu para ellos. Su único propósito es documentar la oferta comercial y facilitar la conversión a factura.
+</Note>
+
+## Crear un presupuesto
+
+<Steps>
+  <Step title="Abrir la pestaña Nuevo Presupuesto">
+    Haz clic en la pestaña **Nuevo Presupuesto** en la ventana principal.
+  </Step>
+  <Step title="Seleccionar el cliente">
+    Elige el cliente en el desplegable. LEFA recuerda el último cliente utilizado y lo preselecciona.
+  </Step>
+  <Step title="Añadir líneas e impuestos">
+    Agrega las líneas del presupuesto con descripción, cantidad y precio unitario. Ajusta los porcentajes de IVA e IRPF y, si lo deseas, la fecha de validez (por defecto 30 días desde la emisión).
+  </Step>
+  <Step title="Guardar o emitir">
+    - **Guardar**: almacena el borrador sin asignar número.
+    - **Emitir presupuesto**: asigna el número correlativo dentro de la serie `PRES`, fija la fecha de emisión y genera el PDF en `~/.lefa/presupuestos_pdf/`.
+  </Step>
+</Steps>
+
+## Aceptar o rechazar un presupuesto
+
+Una vez emitido el presupuesto y recibida la respuesta del cliente, gestiona su estado desde la pestaña **Listado presupuestos**:
+
+- **Aceptar**: selecciona el presupuesto en estado *Emitido* y pulsa **Aceptar**. El estado pasa a **Aceptado**.
+- **Rechazar**: selecciona el presupuesto en estado *Emitido* o *Aceptado* y pulsa **Rechazar**. El estado pasa a **Rechazado** y el presupuesto queda bloqueado sin posibilidad de conversión.
+
+<Note>
+  Solo los presupuestos en estado *Emitido* pueden aceptarse. Un presupuesto *Rechazado* no puede reactivarse ni convertirse en factura.
+</Note>
+
+## Convertir en factura
+
+Esta es la acción central del flujo presupuesto → factura.
+
+<Steps>
+  <Step title="Localizar el presupuesto">
+    Ve a la pestaña **Listado presupuestos** y selecciona el presupuesto que quieres facturar. Debe estar en estado *Emitido* o *Aceptado*.
+  </Step>
+  <Step title="Pulsar Convertir en factura">
+    Haz clic en el botón **Convertir en factura**. Si el presupuesto aún está en estado *Emitido* (no has pasado por el paso de aceptación), LEFA lo acepta automáticamente antes de convertirlo.
+  </Step>
+  <Step title="Revisar el borrador generado">
+    LEFA crea un borrador de factura con el mismo cliente, líneas, IVA e IRPF del presupuesto, y lo abre automáticamente en la pestaña **Nueva Factura**. El campo `presupuesto_origen_id` queda vinculado al presupuesto de origen.
+  </Step>
+  <Step title="Emitir la factura">
+    Revisa las líneas, ajusta lo que necesites y pulsa **Emitir Factura**. A partir de aquí el flujo es idéntico al de una factura directa: se asigna número correlativo, se generan PDF y XML Facturae, y se crea el registro VeriFactu.
+  </Step>
+</Steps>
+
+<Note>
+  Si el presupuesto ya estaba en estado *Convertido*, el botón **Convertir en factura** queda deshabilitado y aparece el enlace **Ver factura asociada** para acceder directamente a la factura resultante.
+</Note>
+
+## Trazabilidad bidireccional
+
+LEFA mantiene el vínculo entre presupuesto y factura en ambas direcciones gracias a dos campos de la base de datos:
+
+| Modelo | Campo | Valor |
+|--------|-------|-------|
+| `Presupuesto` | `factura_id` | ID de la factura creada al convertir |
+| `Factura` | `presupuesto_origen_id` | ID del presupuesto del que proviene |
+
+Esto significa que meses después de la conversión:
+
+- En **Listado presupuestos**, un presupuesto *Convertido* muestra el número de la factura vinculada en la columna **Factura** y ofrece el botón **Ver factura asociada**, que abre esa factura directamente en **Nueva Factura**.
+- En **Nueva Factura**, una factura originada desde un presupuesto conserva el `presupuesto_origen_id`, lo que permite auditar el origen de cualquier cobro.
+
+<Tip>
+  La trazabilidad es especialmente útil en proyectos largos donde entre el presupuesto y la factura pueden pasar semanas o meses. LEFA nunca pierde el hilo.
+</Tip>
+
+## Diferencias con la factura
+
+| Característica | Presupuesto | Factura |
+|----------------|-------------|---------|
+| Validez fiscal | No | Sí |
+| Número oficial | Serie `PRES` (solo interno) | Serie configurable (`FACT`, `WEB`…) |
+| XML Facturae | No | Sí (`~/.lefa/facturas_xml/`) |
+| Registro VeriFactu | No | Sí (`~/.lefa/verifactu/registros/`) |
+| QR tributario en PDF | No | Sí (35 × 35 mm, formato AEAT) |
+| Envío por correo | No (el PDF se guarda localmente) | Sí (desde el Listado) |
+| Rectificativa | No aplica | Sí (serie `RECT`) |

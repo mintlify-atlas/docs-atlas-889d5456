@@ -1,0 +1,142 @@
+---
+title: "VeriFactu: registro encadenado y QR tributario en LEFA"
+sidebarTitle: "VeriFactu"
+description: "LEFA implementa el módulo VeriFactu con hash SHA-256 encadenado, registro inmutable local y QR tributario AEAT en cada factura emitida."
+---
+
+LEFA implementa el sistema de registro de facturación exigido por la normativa española (Orden HAC/1177/2024 y Real Decreto de facturación) para los Sistemas Informáticos de Facturación (SIF). Cada factura emitida genera un registro encadenado mediante SHA-256, se almacena de forma inmutable en disco y lleva impreso un código QR tributario con la URL oficial de cotejo de la AEAT. Todo funciona de manera completamente local: no se envía ningún dato a la Agencia Tributaria salvo que se active expresamente el modo VeriFactu.
+
+## Módulos VeriFactu
+
+El código de facturación se organiza en cuatro módulos dentro de `lefa/verifactu/`:
+
+| Módulo | Responsabilidad |
+|--------|----------------|
+| `hash.py` | Cálculo del hash SHA-256 encadenado. La cadena es única e ininterrumpida para **todas las series** del programa (`FACT`, `RECT`, `WEB`, etc.). |
+| `registro.py` | Creación del registro inmutable al emitir la factura. Persiste un fichero JSON en disco y actualiza los campos `verifactu_hash` y `verifactu_hash_anterior` en la base de datos. |
+| `qr.py` | Construcción de la URL de cotejo AEAT, selección de la leyenda legal obligatoria y generación del PNG del QR (35 × 35 mm en el PDF). |
+| `export.py` | Exportación en ZIP de todos los registros JSON para auditoría o envío futuro a la AEAT. |
+
+## Cadena de hashes
+
+La cadena VeriFactu es **única e ininterrumpida** para todo el sistema, independientemente de la serie de facturación. Una factura rectificativa (serie `RECT`) no enlaza con la rectificativa anterior, sino con la **última factura emitida cronológicamente** en el sistema, sea de la serie que sea.
+
+El orden de la cadena se determina por **fecha de emisión** y, ante igualdad de fecha, por **ID de factura**. No se filtra por serie en ningún momento.
+
+El payload que se firma con SHA-256 sigue este esquema estable:
+
+```
+NIF_EMISOR|NUMERO_FACTURA|DD-MM-YYYY|IMPORTE.2f|HASH_ANTERIOR
+```
+
+Por ejemplo:
+
+```
+B12345678|FACT-2026-0042|15-07-2026|1210.00|a3f8c2d1...
+```
+
+La emisión usa una transacción SQLite `BEGIN IMMEDIATE` que asigna el número correlativo y calcula el hash encadenado en el mismo commit, sin posibilidad de condiciones de carrera entre dos emisiones simultáneas.
+
+<Note>
+  El primer registro de la cadena (la primera factura emitida en el programa) tiene `hash_anterior` vacío (`""`). Esto es el comportamiento correcto: la cadena arranca desde cero.
+</Note>
+
+## QR tributario
+
+Cada PDF de factura lleva impreso el código QR en la esquina inferior derecha a **35 × 35 mm**, acompañado de la leyenda legal obligatoria.
+
+### URL de verificación
+
+La URL sigue el formato oficial de la AEAT con los siguientes parámetros:
+
+| Parámetro | Contenido | Ejemplo |
+|-----------|-----------|---------|
+| `nif` | NIF del emisor, en mayúsculas | `B12345678` |
+| `numserie` | Número completo de la factura | `FACT-2026-0042` |
+| `fecha` | Fecha de emisión en formato `DD-MM-AAAA` | `15-07-2026` |
+| `importe` | Importe total con punto decimal (dos decimales) | `1210.00` |
+| `hash` | Hash SHA-256 completo en minúsculas (solo en modo VeriFactu) | `a3f8c2d1…` |
+
+En el modo actual (no VeriFactu) el endpoint es `ValidarQRNoVerifactu`. Cuando se active el modo VeriFactu, el endpoint pasa a ser `ValidarQR` y se añade el parámetro `hash` con los 64 caracteres hexadecimales en minúsculas.
+
+La URL base es:
+
+```
+https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/
+```
+
+### Leyenda legal
+
+| Modo | Leyenda impresa junto al QR |
+|------|-----------------------------|
+| No VeriFactu (actual) | `SISTEMA INFORMÁTICO NO VERIFICADO` |
+| VeriFactu (cuando se active) | `VERI*FACTU` |
+
+## Modos de operación
+
+La constante `VERIFACTU_MODO_VERIFACTU` en `lefa/config.py` controla el comportamiento del módulo:
+
+```python
+# lefa/config.py
+VERIFACTU_MODO_VERIFACTU = False  # No-Verifactu hasta activar envío a AEAT
+```
+
+| Valor | Modo | Leyenda QR | Endpoint AEAT |
+|-------|------|------------|---------------|
+| `False` (predeterminado) | Sistema informático no verificado | `SISTEMA INFORMÁTICO NO VERIFICADO` | `ValidarQRNoVerifactu` |
+| `True` | VeriFactu (envío a AEAT) | `VERI*FACTU` | `ValidarQR` + parámetro `hash` |
+
+<Note>
+  LEFA opera actualmente en modalidad **no VeriFactu**. Esto es el comportamiento correcto y legal mientras la AEAT no haya habilitado el envío oficial obligatorio para todos los contribuyentes. El QR tributario, la cadena de hashes y los registros JSON se generan y conservan con independencia del modo activo.
+</Note>
+
+## Registros en disco
+
+Cada factura emitida genera un fichero JSON en:
+
+```
+~/.lefa/verifactu/registros/
+```
+
+El nombre del fichero sigue el patrón `{factura_id}_{numero_factura}.json`, con las barras `/` sustituidas por guiones. Ejemplo:
+
+```
+42_FACT-2026-0042.json
+```
+
+El contenido recoge todos los campos del registro:
+
+```json
+{
+  "factura_id": 42,
+  "numero_factura": "FACT-2026-0042",
+  "serie": "FACT",
+  "nif_emisor": "B12345678",
+  "fecha_emision": "2026-07-15",
+  "importe_total": 1210.00,
+  "hash_registro": "a3f8c2d1e9...",
+  "hash_anterior": "f7b0c3a2d8...",
+  "timestamp": "2026-07-15T10:32:05",
+  "tipo": "alta",
+  "factura_rectificada_id": null
+}
+```
+
+Las facturas rectificativas tienen `"tipo": "rectificativa"` y el campo `factura_rectificada_id` relleno con el ID de la factura original.
+
+<Warning>
+  **No elimine ni modifique los ficheros JSON de registros.** La cadena de hashes es verificable: cualquier alteración o laguna en la secuencia rompe la integridad del registro y puede suponer un incumplimiento de la normativa de facturación. Si necesita liberar espacio o archivar registros, use siempre la función de exportación ZIP.
+</Warning>
+
+## Exportar registros
+
+Para generar un archivo ZIP con todos los registros (por ejemplo, para una auditoría o para conservar una copia en un soporte externo), use:
+
+**Herramientas → Exportar registros VeriFactu…**
+
+El ZIP resultante contiene:
+
+- Una carpeta `registros/` con todos los ficheros JSON individuales.
+- Un fichero `indice.json` en la raíz con el array completo de todos los registros, para facilitar el procesamiento automatizado.
+
+El nombre del ZIP por defecto es `verifactu_export_YYYY-MM-DD.zip` y se guarda en `~/.lefa/verifactu/`.

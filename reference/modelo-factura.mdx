@@ -1,0 +1,299 @@
+---
+title: "Modelo Factura: estructura y campos de la factura en LEFA"
+sidebarTitle: "Factura"
+description: "Referencia completa del modelo SQLAlchemy Factura en LEFA: campos, relaciones, enum de estados, propiedades calculadas y métodos de cálculo."
+---
+
+El modelo `Factura` representa el documento de facturación central de LEFA. Gestiona todo el ciclo de vida de una factura emitida por el autónomo, desde su creación como borrador hasta su cobro. Mientras la factura permanece en estado `BORRADOR`, el campo `numero_factura` es `NULL` para evitar comprometer la numeración oficial antes de su emisión. El modelo incluye soporte para facturas rectificativas mediante una auto-referencia, trazabilidad de origen desde presupuestos y campos de encadenamiento para el sistema **VeriFactu**.
+
+---
+
+## Tabla SQL
+
+La tabla en la base de datos SQLite se llama **`facturas`**. Define la siguiente restricción de unicidad:
+
+| Restricción | Columna | Nombre interno |
+|---|---|---|
+| `UniqueConstraint` | `numero_factura` | `uq_numero_factura` |
+
+Esto garantiza que no existan dos facturas con el mismo número oficial una vez asignado. Como `numero_factura` admite `NULL`, múltiples borradores pueden coexistir sin violar la restricción.
+
+---
+
+## Campos
+
+<ResponseField name="id" type="int" required>
+  Clave primaria autoincrementada. Identificador único e inmutable de la factura en la base de datos.
+</ResponseField>
+
+<ResponseField name="numero_factura" type="str | None">
+  Número oficial de la factura (máx. 30 caracteres). Es `NULL` mientras la factura está en estado `BORRADOR`. Se asigna en el momento de la emisión y queda protegido por la restricción de unicidad `uq_numero_factura`.
+</ResponseField>
+
+<ResponseField name="serie" type="str">
+  Serie de facturación (máx. 20 caracteres). Valor por defecto: `"FACT"`. Permite separar distintas series de facturación (p. ej. `"RECT"` para rectificativas).
+</ResponseField>
+
+<ResponseField name="cliente_id" type="int" required>
+  Clave foránea hacia `clientes.id`. Identifica el cliente destinatario de la factura. No puede ser `NULL`.
+</ResponseField>
+
+<ResponseField name="fecha_emision" type="date | None">
+  Fecha en que se emite la factura. Permanece `NULL` en borradores. Se almacena como tipo `Date` de SQLAlchemy.
+</ResponseField>
+
+<ResponseField name="fecha_vencimiento" type="date | None">
+  Fecha límite de pago acordada con el cliente. Puede ser `NULL` si no se establece plazo. Se usa en `texto_estado_vencimiento()` para calcular el estado de cobro.
+</ResponseField>
+
+<ResponseField name="estado" type="EstadoFactura" required>
+  Estado actual de la factura según el enum `EstadoFactura`. Valor por defecto: `EstadoFactura.BORRADOR`. Controla qué operaciones están disponibles sobre la factura.
+</ResponseField>
+
+<ResponseField name="porc_iva" type="float" required>
+  Porcentaje de IVA aplicable a la factura. Valor por defecto: `21.0`. Se usa en `calcular_iva()`.
+</ResponseField>
+
+<ResponseField name="porc_irpf" type="float" required>
+  Porcentaje de retención de IRPF aplicable. Valor por defecto: `15.0`. Se usa en `calcular_irpf()`.
+</ResponseField>
+
+<ResponseField name="enviada" type="bool" required>
+  Indica si la factura ha sido enviada por correo electrónico al cliente. Valor por defecto: `False`.
+</ResponseField>
+
+<ResponseField name="fecha_envio" type="date | None">
+  Fecha en que se realizó el envío por correo. Es `NULL` si `enviada` es `False`. Se formatea en `texto_estado_envio()`.
+</ResponseField>
+
+<ResponseField name="destinatario" type="str | None">
+  Dirección de correo electrónico a la que se envió la factura (máx. 150 caracteres). Puede ser `NULL`.
+</ResponseField>
+
+<ResponseField name="verifactu_hash" type="str | None">
+  Hash SHA de 64 caracteres generado para el sistema VeriFactu. Es inmutable tras la emisión. `NULL` hasta que se genera el hash.
+</ResponseField>
+
+<ResponseField name="verifactu_hash_anterior" type="str | None">
+  Hash de la factura precedente en la cadena VeriFactu (máx. 64 caracteres). Permite el encadenamiento requerido por la normativa. `NULL` en la primera factura de la serie.
+</ResponseField>
+
+<ResponseField name="factura_rectificada_id" type="int | None">
+  Clave foránea auto-referencial hacia `facturas.id`. Si no es `NULL`, indica que esta factura rectifica a la factura con ese `id`. Se usa junto a la propiedad `es_rectificativa`.
+</ResponseField>
+
+<ResponseField name="presupuesto_origen_id" type="int | None">
+  Clave foránea hacia `presupuestos.id`. Registra el presupuesto del que se generó esta factura mediante conversión. `NULL` si la factura se creó directamente.
+</ResponseField>
+
+---
+
+## Enum `EstadoFactura`
+
+`EstadoFactura` hereda de `str` y `enum.Enum`, por lo que sus valores son cadenas de texto directamente comparables y serializables.
+
+```python
+class EstadoFactura(str, enum.Enum):
+    """Estados posibles de una factura en el flujo operativo."""
+
+    BORRADOR = "Borrador"
+    EMITIDA  = "Emitida"
+    COBRADA  = "Cobrada"
+```
+
+| Valor del enum | Cadena almacenada | Significado |
+|---|---|---|
+| `EstadoFactura.BORRADOR` | `"Borrador"` | Factura en edición. Sin número oficial asignado. Modificable. |
+| `EstadoFactura.EMITIDA` | `"Emitida"` | Factura numerada y enviada al cliente. Solo lectura. |
+| `EstadoFactura.COBRADA` | `"Cobrada"` | Pago recibido y confirmado. Estado terminal. |
+
+<Note>
+  Una factura en estado `EMITIDA` o `COBRADA` no puede editarse. La propiedad `es_editable` devolverá `False` en ambos casos.
+</Note>
+
+---
+
+## Relaciones
+
+<ResponseField name="cliente" type="Cliente">
+  Relación muchos-a-uno hacia el modelo `Cliente`. Accesible como atributo de instancia. Se configura con `back_populates="facturas"`.
+</ResponseField>
+
+<ResponseField name="factura_rectificada" type="Factura | None">
+  Relación auto-referencial. Apunta a la instancia `Factura` que esta factura está rectificando. Se establece mediante `remote_side="Factura.id"` y la clave foránea `factura_rectificada_id`. Devuelve `None` si no es una rectificativa.
+</ResponseField>
+
+<ResponseField name="lineas" type="list[LineaFactura]">
+  Relación uno-a-muchos hacia `LineaFactura`. Las líneas se ordenan por `LineaFactura.id` y se eliminan en cascada (`cascade="all, delete-orphan"`) al borrar la factura.
+</ResponseField>
+
+---
+
+## Propiedades calculadas
+
+### `es_editable` *(propiedad)*
+
+```python
+@property
+def es_editable(self) -> bool:
+    return self.estado == EstadoFactura.BORRADOR
+```
+
+Devuelve `True` únicamente cuando la factura está en estado `BORRADOR`. La interfaz de LEFA usa esta propiedad para habilitar o deshabilitar controles de edición.
+
+---
+
+### `es_rectificativa` *(propiedad)*
+
+```python
+@property
+def es_rectificativa(self) -> bool:
+    return self.factura_rectificada_id is not None
+```
+
+Devuelve `True` si la factura tiene asignada una referencia a otra factura que corrige. Equivale a comprobar que `factura_rectificada_id` no sea `None`.
+
+---
+
+### Métodos de cálculo
+
+Todos los métodos de cálculo operan sobre la colección `self.lineas` y los porcentajes fiscales almacenados en la instancia.
+
+<Expandable title="calcular_subtotal()">
+
+```python
+def calcular_subtotal(self) -> float:
+    return sum(linea.subtotal for linea in self.lineas)
+```
+
+Suma los subtotales de todas las líneas de la factura. Cada subtotal de línea es `cantidad × precio_unitario`.
+
+</Expandable>
+
+<Expandable title="calcular_iva()">
+
+```python
+def calcular_iva(self) -> float:
+    return self.calcular_subtotal() * (self.porc_iva / 100.0)
+```
+
+Aplica el porcentaje de IVA (`porc_iva`) sobre el subtotal. Con el valor por defecto del 21 %, una base de 1 000 € produce 210 € de IVA.
+
+</Expandable>
+
+<Expandable title="calcular_irpf()">
+
+```python
+def calcular_irpf(self) -> float:
+    return self.calcular_subtotal() * (self.porc_irpf / 100.0)
+```
+
+Calcula la retención de IRPF a descontar. Con el valor por defecto del 15 %, una base de 1 000 € supone 150 € de retención.
+
+</Expandable>
+
+<Expandable title="calcular_total()">
+
+```python
+def calcular_total(self) -> float:
+    subtotal = self.calcular_subtotal()
+    return subtotal + self.calcular_iva() - self.calcular_irpf()
+```
+
+Devuelve el importe total a cobrar: **subtotal + IVA − IRPF**. Con los valores por defecto (21 % IVA, 15 % IRPF) el factor neto sobre la base es el 106 %.
+
+</Expandable>
+
+<Expandable title="texto_estado_envio()">
+
+```python
+def texto_estado_envio(self) -> str:
+    if self.estado == EstadoFactura.BORRADOR:
+        return "—"
+    if self.enviada:
+        fecha = self.fecha_envio.strftime("%d/%m/%Y") if self.fecha_envio else "?"
+        return f"✓ Enviada ({fecha})"
+    return "Pendiente de enviar"
+```
+
+Devuelve una cadena legible para mostrar en la interfaz:
+
+| Situación | Texto devuelto |
+|---|---|
+| Factura en borrador | `"—"` |
+| Enviada con fecha registrada | `"✓ Enviada (DD/MM/AAAA)"` |
+| Enviada sin fecha | `"✓ Enviada (?)"` |
+| Emitida pero no enviada | `"Pendiente de enviar"` |
+
+</Expandable>
+
+<Expandable title="texto_estado_vencimiento()">
+
+```python
+def texto_estado_vencimiento(self) -> str:
+    if self.estado == EstadoFactura.BORRADOR:
+        return "—"
+    if self.estado == EstadoFactura.COBRADA:
+        return "Cobrada"
+    if self.fecha_vencimiento is None:
+        return "Pendiente"
+    hoy = date.today()
+    if self.fecha_vencimiento < hoy:
+        return "Vencida"
+    dias = (self.fecha_vencimiento - hoy).days
+    if dias == 0:
+        return "Vence hoy"
+    if dias <= 5:
+        return f"Vence en {dias} días"
+    return "Pendiente"
+```
+
+Calcula el estado de cobro en función de la fecha de vencimiento y la fecha actual. No modifica el estado de la factura en la base de datos.
+
+| Situación | Texto devuelto |
+|---|---|
+| Borrador | `"—"` |
+| Cobrada | `"Cobrada"` |
+| Sin fecha de vencimiento | `"Pendiente"` |
+| Fecha superada | `"Vencida"` |
+| Vence hoy | `"Vence hoy"` |
+| Vence en ≤ 5 días | `"Vence en N días"` |
+| Vence en > 5 días | `"Pendiente"` |
+
+</Expandable>
+
+---
+
+## Modelo `LineaFactura`
+
+Cada `Factura` contiene una lista de objetos `LineaFactura` almacenados en la tabla **`lineas_factura`**. Representan los conceptos o servicios facturados de forma individual.
+
+<ResponseField name="id" type="int" required>
+  Clave primaria autoincrementada de la línea.
+</ResponseField>
+
+<ResponseField name="factura_id" type="int" required>
+  Clave foránea hacia `facturas.id`. Vincula la línea con su factura padre.
+</ResponseField>
+
+<ResponseField name="descripcion" type="str" required>
+  Descripción del concepto o servicio (máx. 500 caracteres). No puede ser `NULL`.
+</ResponseField>
+
+<ResponseField name="cantidad" type="float" required>
+  Número de unidades del concepto. Valor por defecto: `1.0`.
+</ResponseField>
+
+<ResponseField name="precio_unitario" type="float" required>
+  Precio por unidad en euros. Valor por defecto: `0.0`.
+</ResponseField>
+
+### Propiedad `subtotal`
+
+```python
+@property
+def subtotal(self) -> float:
+    return round(self.cantidad * self.precio_unitario, 2)
+```
+
+Producto de `cantidad` × `precio_unitario`, redondeado a dos decimales. Es la base sobre la que `Factura.calcular_subtotal()` acumula el total de todas las líneas.

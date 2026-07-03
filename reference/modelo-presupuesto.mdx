@@ -1,0 +1,195 @@
+---
+title: "Modelo Presupuesto: estructura y ciclo de vida en LEFA"
+sidebarTitle: "Presupuesto"
+description: "Referencia del modelo SQLAlchemy Presupuesto en LEFA: campos, enum de estados, relaciones con Cliente y Factura, y modelo LineaPresupuesto."
+---
+
+El modelo `Presupuesto` representa una oferta comercial previa a la facturación. Un presupuesto no tiene validez fiscal por sí mismo, pero puede convertirse en una `Factura` una vez aceptado por el cliente. LEFA gestiona su ciclo de vida completo a través del enum `EstadoPresupuesto`, desde la fase de borrador hasta la conversión o el rechazo. Al igual que las facturas, el campo `numero_presupuesto` permanece `NULL` mientras el presupuesto es un borrador, y se asigna en el momento de su emisión.
+
+---
+
+## Tabla SQL
+
+La tabla en la base de datos SQLite se llama **`presupuestos`**. Define la siguiente restricción de unicidad:
+
+| Restricción | Columna | Nombre interno |
+|---|---|---|
+| `UniqueConstraint` | `numero_presupuesto` | `uq_numero_presupuesto` |
+
+Como `numero_presupuesto` admite `NULL`, múltiples borradores pueden coexistir sin violar la restricción hasta que se les asigna número.
+
+---
+
+## Campos
+
+<ResponseField name="id" type="int" required>
+  Clave primaria autoincrementada. Identificador único e inmutable del presupuesto en la base de datos.
+</ResponseField>
+
+<ResponseField name="numero_presupuesto" type="str | None">
+  Número oficial del presupuesto (máx. 30 caracteres). Es `NULL` mientras el presupuesto está en estado `BORRADOR`. Se asigna al emitirlo y queda protegido por la restricción `uq_numero_presupuesto`.
+</ResponseField>
+
+<ResponseField name="serie" type="str">
+  Serie del presupuesto (máx. 20 caracteres). Valor por defecto: `"PRES"`. Permite identificar distintas series de presupuestación.
+</ResponseField>
+
+<ResponseField name="cliente_id" type="int" required>
+  Clave foránea hacia `clientes.id`. Identifica el cliente al que va dirigida la oferta. No puede ser `NULL`.
+</ResponseField>
+
+<ResponseField name="fecha_emision" type="date | None">
+  Fecha de emisión del presupuesto. Permanece `NULL` en borradores. Se almacena como tipo `Date` de SQLAlchemy.
+</ResponseField>
+
+<ResponseField name="validez_hasta" type="date | None">
+  Fecha límite de validez de la oferta. Pasada esta fecha, el presupuesto puede considerarse expirado. Puede ser `NULL` si no se fija plazo.
+</ResponseField>
+
+<ResponseField name="estado" type="EstadoPresupuesto" required>
+  Estado actual del presupuesto según el enum `EstadoPresupuesto`. Valor por defecto: `EstadoPresupuesto.BORRADOR`.
+</ResponseField>
+
+<ResponseField name="porc_iva" type="float" required>
+  Porcentaje de IVA aplicable al presupuesto. Valor por defecto: `21.0`. Se traspasa a la factura resultante al convertir.
+</ResponseField>
+
+<ResponseField name="porc_irpf" type="float" required>
+  Porcentaje de retención de IRPF. Valor por defecto: `15.0`. Se traspasa a la factura resultante al convertir.
+</ResponseField>
+
+<ResponseField name="factura_id" type="int | None">
+  Clave foránea hacia `facturas.id`. Se rellena cuando el presupuesto ha sido convertido en factura. `NULL` mientras no se haya convertido.
+</ResponseField>
+
+---
+
+## Enum `EstadoPresupuesto`
+
+`EstadoPresupuesto` hereda de `str` y `enum.Enum`, por lo que sus valores son cadenas de texto serializables directamente.
+
+```python
+class EstadoPresupuesto(str, enum.Enum):
+    """Ciclo de vida del presupuesto."""
+
+    BORRADOR   = "Borrador"
+    EMITIDO    = "Emitido"
+    ACEPTADO   = "Aceptado"
+    CONVERTIDO = "Convertido"
+    RECHAZADO  = "Rechazado"
+```
+
+| Valor del enum | Cadena almacenada | Significado |
+|---|---|---|
+| `EstadoPresupuesto.BORRADOR` | `"Borrador"` | En preparación, sin número asignado. Editable. |
+| `EstadoPresupuesto.EMITIDO` | `"Emitido"` | Numerado y enviado al cliente. Pendiente de respuesta. |
+| `EstadoPresupuesto.ACEPTADO` | `"Aceptado"` | El cliente ha confirmado la oferta. Listo para convertir. |
+| `EstadoPresupuesto.CONVERTIDO` | `"Convertido"` | Se ha generado una factura a partir de este presupuesto. El campo `factura_id` estará relleno. |
+| `EstadoPresupuesto.RECHAZADO` | `"Rechazado"` | El cliente ha declinado la oferta. Estado terminal. |
+
+<Note>
+  Un presupuesto en estado `CONVERTIDO` tiene su campo `factura_id` apuntando a la factura generada. La factura, a su vez, registra el presupuesto de origen en `presupuesto_origen_id`.
+</Note>
+
+---
+
+## Relaciones
+
+<ResponseField name="cliente" type="Cliente">
+  Relación muchos-a-uno hacia el modelo `Cliente`. Accesible como atributo de instancia. Se configura con `back_populates="presupuestos"`.
+</ResponseField>
+
+<ResponseField name="lineas" type="list[LineaPresupuesto]">
+  Relación uno-a-muchos hacia `LineaPresupuesto`. Las líneas se ordenan por `LineaPresupuesto.id` y se eliminan en cascada (`cascade="all, delete-orphan"`) al borrar el presupuesto.
+</ResponseField>
+
+---
+
+## Propiedades calculadas
+
+Todos los métodos de cálculo operan sobre la colección `self.lineas` y los porcentajes fiscales almacenados en la instancia, con la misma lógica que el modelo `Factura`.
+
+<Expandable title="calcular_subtotal()">
+
+```python
+def calcular_subtotal(self) -> float:
+    return sum(linea.subtotal for linea in self.lineas)
+```
+
+Suma los subtotales (`cantidad × precio_unitario`) de todas las líneas del presupuesto.
+
+</Expandable>
+
+<Expandable title="calcular_iva()">
+
+```python
+def calcular_iva(self) -> float:
+    return self.calcular_subtotal() * (self.porc_iva / 100.0)
+```
+
+Aplica el porcentaje `porc_iva` sobre el subtotal. Con el 21 % por defecto, una base de 1 000 € produce 210 € de IVA estimado.
+
+</Expandable>
+
+<Expandable title="calcular_irpf()">
+
+```python
+def calcular_irpf(self) -> float:
+    return self.calcular_subtotal() * (self.porc_irpf / 100.0)
+```
+
+Calcula la retención de IRPF orientativa. Con el 15 % por defecto, una base de 1 000 € supone 150 € de retención estimada.
+
+</Expandable>
+
+<Expandable title="calcular_total()">
+
+```python
+def calcular_total(self) -> float:
+    subtotal = self.calcular_subtotal()
+    return subtotal + self.calcular_iva() - self.calcular_irpf()
+```
+
+Devuelve el importe total estimado: **subtotal + IVA − IRPF**. Este valor es orientativo hasta que el presupuesto se convierta en factura.
+
+</Expandable>
+
+---
+
+## Modelo `LineaPresupuesto`
+
+Cada `Presupuesto` contiene una lista de objetos `LineaPresupuesto` almacenados en la tabla **`lineas_presupuesto`**. Representan los conceptos o servicios incluidos en la oferta.
+
+<ResponseField name="id" type="int" required>
+  Clave primaria autoincrementada de la línea del presupuesto.
+</ResponseField>
+
+<ResponseField name="presupuesto_id" type="int" required>
+  Clave foránea hacia `presupuestos.id`. Vincula la línea con su presupuesto padre.
+</ResponseField>
+
+<ResponseField name="descripcion" type="str" required>
+  Descripción del concepto o servicio ofertado (máx. 500 caracteres). No puede ser `NULL`.
+</ResponseField>
+
+<ResponseField name="cantidad" type="float" required>
+  Número de unidades del concepto. Valor por defecto: `1.0`.
+</ResponseField>
+
+<ResponseField name="precio_unitario" type="float" required>
+  Precio estimado por unidad en euros. Valor por defecto: `0.0`.
+</ResponseField>
+
+### Propiedad `subtotal`
+
+```python
+@property
+def subtotal(self) -> float:
+    return round(self.cantidad * self.precio_unitario, 2)
+```
+
+Producto de `cantidad` × `precio_unitario`, redondeado a dos decimales. Es la base sobre la que `Presupuesto.calcular_subtotal()` acumula el importe total de la oferta.
+
+<Note>
+  La estructura de `LineaPresupuesto` es intencionalmente idéntica a la de `LineaFactura`. Esto facilita la conversión directa de presupuesto a factura: cada línea del presupuesto se duplica como línea de la factura resultante.
+</Note>

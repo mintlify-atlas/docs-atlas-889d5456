@@ -1,0 +1,121 @@
+{
+  "projectType": "saas",
+  "projectName": "LEFA",
+  "projectDescription": "Aplicación de escritorio de facturación para autónomos españoles, con funcionamiento 100% local, sin suscripciones ni dependencias en la nube.",
+  "theme": "almond",
+  "primaryColor": "#2a8131",
+  "lightColor": "#5b5d5a",
+  "darkColor": "#b9d1b7",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentación",
+        "groups": [
+          {
+            "group": "Introducción",
+            "pages": ["introduction", "quickstart"]
+          },
+          {
+            "group": "Facturación",
+            "pages": [
+              "guides/facturas",
+              "guides/presupuestos",
+              "guides/clientes",
+              "guides/servicios-plantillas"
+            ]
+          },
+          {
+            "group": "Configuración",
+            "pages": [
+              "guides/preferencias",
+              "guides/correo-smtp",
+              "guides/datos-locales"
+            ]
+          },
+          {
+            "group": "Cumplimiento Legal",
+            "pages": [
+              "guides/verifactu",
+              "guides/facturae"
+            ]
+          },
+          {
+            "group": "Mantenimiento",
+            "pages": [
+              "guides/backups",
+              "guides/estados-ciclo-vida"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Referencia",
+        "groups": [
+          {
+            "group": "Modelos de datos",
+            "pages": [
+              "reference/modelo-factura",
+              "reference/modelo-cliente",
+              "reference/modelo-presupuesto"
+            ]
+          },
+          {
+            "group": "Servicios",
+            "pages": [
+              "reference/factura-service",
+              "reference/presupuesto-service",
+              "reference/pdf-service",
+              "reference/verifactu-service"
+            ]
+          },
+          {
+            "group": "Configuración del sistema",
+            "pages": [
+              "reference/config",
+              "reference/variables-entorno"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Facturación local 100% sin suscripciones ni nube",
+    "Emisión de facturas con numeración correlativa por series",
+    "Generación automática de PDF y XML Facturae al emitir",
+    "Cumplimiento VeriFactu con hash SHA-256 encadenado y QR tributario AEAT",
+    "Presupuestos convertibles directamente en facturas",
+    "Facturas rectificativas vinculadas a la original (serie RECT)",
+    "Envío de facturas por email SMTP con contraseña en llavero del sistema",
+    "Historial de envíos y control de vencimientos",
+    "Catálogo de servicios y plantillas reutilizables de líneas y facturas completas",
+    "Copia de seguridad ZIP integrada",
+    "Compatible con Linux y Windows",
+    "Interfaz PyQt6 sin archivos .ui, maquetación 100% por código",
+    "Base de datos SQLite local con SQLAlchemy"
+  ],
+  "publicApiSurface": [
+    "FacturaService.guardar_borrador()",
+    "FacturaService.emitir_factura()",
+    "FacturaService.duplicar_factura()",
+    "FacturaService.rectificar_factura()",
+    "FacturaService.marcar_cobrada()",
+    "FacturaService.marcar_enviada()",
+    "FacturaService.listar_todas()",
+    "FacturaService.resumen_hoy()",
+    "PresupuestoService.crear_presupuesto()",
+    "PresupuestoService.emitir_presupuesto()",
+    "PresupuestoService.convertir_a_factura()",
+    "ClienteService.crear_cliente()",
+    "ClienteService.listar_clientes()",
+    "PdfService.generar_pdf()",
+    "PresupuestoPdfService.generar_pdf()",
+    "FacturaeService.generar_xml()",
+    "RegistroVerifactuService.crear_registro_emision()",
+    "BackupService.crear_backup()",
+    "PreferenciasService.cargar()",
+    "SmtpConfigService.cargar()",
+    "NumeracionService.siguiente_secuencia()",
+    "NumeracionService.formatear_numero()"
+  ]
+}

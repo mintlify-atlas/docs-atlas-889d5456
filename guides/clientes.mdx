@@ -1,0 +1,65 @@
+---
+title: "Gestionar clientes en LEFA"
+sidebarTitle: "Clientes"
+description: "Crea y edita clientes en LEFA, consulta su historial de facturas, total facturado y configura datos para Facturae y FACe."
+---
+
+Los clientes son el eje central de la facturación en LEFA. Cada factura y presupuesto está vinculado a un cliente, y la ficha de cliente almacena tanto los datos básicos de contacto como los campos adicionales necesarios para generar un XML Facturae válido para la administración pública española (plataforma FACe). Al primer arranque de la aplicación con la base de datos vacía, LEFA crea tres clientes de ejemplo para que puedas explorar la interfaz sin tener que introducir datos manualmente.
+
+## Crear un cliente
+
+Puedes crear un nuevo cliente de dos formas:
+
+- **Menú superior**: ve a **Clientes → Nuevo cliente…**
+- **Pestaña Clientes**: haz clic en el botón **Nuevo cliente** dentro de la pestaña.
+
+Rellena los campos del formulario y guarda:
+
+| Campo | Obligatorio | Descripción |
+|-------|-------------|-------------|
+| **Razón social** | Sí | Nombre completo o razón social de la empresa o persona. |
+| **CIF / NIF** | Sí | Identificador fiscal. Se usa en el XML Facturae y en el PDF. |
+| **Dirección** | Recomendado | Dirección postal que aparece en la factura. |
+| **Email** | Recomendado | Usado para el envío automático de facturas por correo. |
+| **Teléfono** | No | Dato de contacto interno; no aparece en el PDF. |
+
+## Campos para Facturae / FACe
+
+Si facturas a una **administración pública española**, el XML Facturae debe incluir información adicional que la plataforma FACe necesita para procesar el documento. Configúrala en la sección **Facturae / FACe** de la ficha del cliente:
+
+| Campo | Código / Formato | Descripción |
+|-------|------------------|-------------|
+| **IBAN del cliente** | `ES00 0000 0000 00 0000000000` | Cuenta bancaria del cliente (opcional en clientes privados). |
+| **Forma de pago** | `04` = Transferencia bancaria | Código FACe de la forma de cobro. El valor por defecto es `04`. |
+| **DIR3 — Oficina contable** | Código DIR3 | Unidad responsable de la contabilidad del organismo. |
+| **DIR3 — Órgano gestor** | Código DIR3 | Unidad que tramita el pago. |
+| **DIR3 — Unidad tramitadora** | Código DIR3 | Unidad que gestiona el expediente de compra. |
+
+<Warning>
+  Si el cliente es una administración pública y los **códigos DIR3** no están informados, la plataforma FACe rechazará el XML aunque esté técnicamente bien formado. Solicita estos códigos al departamento de compras o contratación del organismo antes de emitir la primera factura.
+
+  El **IBAN del emisor** (el tuyo como autónomo) también es obligatorio para FACe y se configura en **Herramientas → Preferencias → Empresa emisora**.
+</Warning>
+
+## Buscar clientes
+
+En la pestaña **Clientes** dispones de un campo de búsqueda que filtra en tiempo real por:
+
+- **Nombre / razón social**
+- **NIF / CIF**
+- **Email**
+
+Escribe cualquier parte del valor en el cuadro de búsqueda y la tabla se actualiza instantáneamente sin necesidad de pulsar ningún botón.
+
+## Historial y total facturado
+
+Al seleccionar un cliente y pulsar **Editar** (o hacer doble clic), además de sus datos aparece:
+
+- **Historial de facturas**: listado de todas las facturas emitidas y cobradas para ese cliente, con número, fecha e importe.
+- **Total facturado**: suma de los importes totales (IVA incluido, IRPF deducido) de todas sus facturas emitidas y cobradas.
+
+Esta información te permite tener una visión rápida del volumen de negocio con cada cliente sin necesidad de exportar datos ni usar herramientas externas.
+
+## Último cliente usado
+
+LEFA recuerda automáticamente el último cliente que usaste al crear o emitir una factura o presupuesto. La próxima vez que abras la pestaña **Nueva Factura** o **Nuevo Presupuesto**, ese cliente estará preseleccionado en el desplegable, ahorrando un paso en el flujo habitual de trabajo.
