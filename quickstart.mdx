@@ -1,7 +1,7 @@
 ---
-title: "Instalar y ejecutar LEFA en tu equipo"
+title: "Cómo instalar y ejecutar LEFA en Linux o Windows desde cero"
 sidebarTitle: "Inicio rápido"
-description: "Instala LEFA en Linux o Windows, configura tus datos de emisor y emite tu primera factura paso a paso en menos de diez minutos."
+description: "Instala LEFA en Linux o Windows en minutos: entorno virtual automático, datos de emisor y tu primera factura con PDF y XML Facturae."
 ---
 
 Esta guía te lleva desde cero hasta tu primera factura emitida en aproximadamente diez minutos. Verás cómo obtener LEFA, arrancarlo por primera vez, rellenar tus datos como emisor y completar el flujo completo de facturación: elegir cliente, añadir líneas e importe, y generar el PDF y el XML Facturae de forma automática.
@@ -38,7 +38,7 @@ python run_app.py
 
 </CodeGroup>
 
-La primera vez verás mensajes como *«Creando entorno virtual…»* e *«Instalando dependencias…»*. En las ejecuciones posteriores el arranque es inmediato porque el entorno ya existe.
+La primera vez verás mensajes como *«Creando entorno virtual en .venv …»* e *«Instalando dependencias en el entorno virtual …»*. En las ejecuciones posteriores el arranque es inmediato porque el entorno ya existe.
 
 <Tip>
   Si el directorio del proyecto no tiene permisos de escritura (por ejemplo en una instalación en `/usr/share/`), `run_app.py` creará el entorno virtual en `~/.local/share/lefa/.venv` automáticamente.
@@ -182,7 +182,7 @@ LEFA respeta dos variables de entorno que permiten personalizar las rutas del pr
 
 | Variable | Descripción |
 |---|---|
-| `LEFA_PROJECT_DIR` | Ruta raíz del proyecto. Útil cuando LEFA se instala en una ubicación diferente al directorio de trabajo actual (por ejemplo, un paquete `.deb` en `/usr/share/`). |
+| `LEFA_PROJECT_DIR` | Ruta raíz del proyecto. `run_app.py` la establece automáticamente al arrancar; también puede definirse antes de ejecutar para forzar una ruta concreta (por ejemplo, en un paquete `.deb` instalado en `/usr/share/`). |
 | `LEFA_VENV` | Ruta explícita al entorno virtual que debe usar `run_app.py`. Si no se define, se usa `.venv` dentro del proyecto o `~/.local/share/lefa/.venv` según los permisos del directorio. |
 
 Ejemplo de uso en Linux:

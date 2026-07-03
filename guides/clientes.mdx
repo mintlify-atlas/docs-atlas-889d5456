@@ -1,7 +1,7 @@
 ---
-title: "Gestionar clientes en LEFA"
+title: "Gestionar clientes en LEFA: datos, historial y FACe"
 sidebarTitle: "Clientes"
-description: "Crea y edita clientes en LEFA, consulta su historial de facturas, total facturado y configura datos para Facturae y FACe."
+description: "Crea y edita clientes en LEFA, consulta el historial de facturas, el total facturado y configura los códigos DIR3 para Facturae y FACe."
 ---
 
 Los clientes son el eje central de la facturación en LEFA. Cada factura y presupuesto está vinculado a un cliente, y la ficha de cliente almacena tanto los datos básicos de contacto como los campos adicionales necesarios para generar un XML Facturae válido para la administración pública española (plataforma FACe). Al primer arranque de la aplicación con la base de datos vacía, LEFA crea tres clientes de ejemplo para que puedas explorar la interfaz sin tener que introducir datos manualmente.
@@ -27,13 +27,13 @@ Rellena los campos del formulario y guarda:
 
 Si facturas a una **administración pública española**, el XML Facturae debe incluir información adicional que la plataforma FACe necesita para procesar el documento. Configúrala en la sección **Facturae / FACe** de la ficha del cliente:
 
-| Campo | Código / Formato | Descripción |
-|-------|------------------|-------------|
-| **IBAN del cliente** | `ES00 0000 0000 00 0000000000` | Cuenta bancaria del cliente (opcional en clientes privados). |
-| **Forma de pago** | `04` = Transferencia bancaria | Código FACe de la forma de cobro. El valor por defecto es `04`. |
-| **DIR3 — Oficina contable** | Código DIR3 | Unidad responsable de la contabilidad del organismo. |
-| **DIR3 — Órgano gestor** | Código DIR3 | Unidad que tramita el pago. |
-| **DIR3 — Unidad tramitadora** | Código DIR3 | Unidad que gestiona el expediente de compra. |
+| Campo | Campo en BD | Descripción |
+|-------|-------------|-------------|
+| **IBAN del cliente** | `iban` | Cuenta bancaria del cliente (opcional en clientes privados). |
+| **Forma de pago** | `forma_pago` | Código FACe de la forma de cobro. Valor por defecto: `04` (transferencia bancaria). |
+| **DIR3 — Oficina contable** | `dir3_oficina` | Unidad responsable de la contabilidad del organismo. |
+| **DIR3 — Órgano gestor** | `dir3_organo` | Unidad que gestiona el pago. |
+| **DIR3 — Unidad tramitadora** | `dir3_unidad` | Unidad que tramita el expediente de compra. |
 
 <Warning>
   Si el cliente es una administración pública y los **códigos DIR3** no están informados, la plataforma FACe rechazará el XML aunque esté técnicamente bien formado. Solicita estos códigos al departamento de compras o contratación del organismo antes de emitir la primera factura.

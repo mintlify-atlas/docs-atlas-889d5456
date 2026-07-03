@@ -1,7 +1,7 @@
 ---
-title: "Configurar preferencias y datos de emisor en LEFA"
+title: "Preferencias y datos de la empresa emisora en LEFA"
 sidebarTitle: "Preferencias"
-description: "Configura IVA, IRPF, vencimientos, datos de la empresa emisora, series de facturación, formato de numeración y logotipo en LEFA."
+description: "Configura IVA, IRPF, vencimiento, empresa emisora, series de facturación, formato de numeración, logotipo y pie de factura en LEFA."
 ---
 
 Las preferencias de LEFA son el punto de partida antes de emitir la primera factura. Desde **Herramientas → Preferencias…** puedes definir los valores que se aplican automáticamente a cada nueva factura (impuestos, vencimiento, serie), los datos que aparecen en el PDF como emisor (nombre, NIF, dirección) y opciones de presentación como el logotipo o el pie de página. Todos los cambios se guardan en `~/.lefa/preferencias.json` de forma inmediata al pulsar **Guardar**.
@@ -41,12 +41,14 @@ LEFA genera el número de cada factura combinando la serie, el año y un correla
 
 **Formato de numeración** (`formato_numeracion`): determina la estructura visual del número. Algunos ejemplos:
 
-| Ejemplo de número | Descripción del formato |
-|---|---|
-| `FACT-2026-0001` | Serie + año + correlativo con guiones |
-| `2026-001` | Año + correlativo corto |
-| `0001/2026` | Correlativo + año con barra |
-| `WEB-001` | Solo serie + correlativo (sin año) |
+| Ejemplo de número | Clave interna | Plantilla |
+|---|---|---|
+| `FACT-2026-0001` | `fact_anio_4` | Serie + año + correlativo (guiones, 4 dígitos) |
+| `2026-001` | `anio_3` | Año + correlativo corto (sin serie) |
+| `F-2026-001` | `serie_anio_3` | Serie corta + año + correlativo |
+| `FAC2026-001` | `serie_anio_compact` | Serie pegada al año + correlativo |
+| `0001/2026` | `seq4_anio` | Correlativo + año separados por barra |
+| `WEB-001` | `serie_seq3` | Solo serie + correlativo (sin año) |
 
 **Dígitos del correlativo** (`digitos_secuencia`): número de cifras del contador (entre 2 y 6). Con 4 dígitos, la primera factura del año es `0001`; con 6 sería `000001`.
 

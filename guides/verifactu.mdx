@@ -59,10 +59,17 @@ La URL sigue el formato oficial de la AEAT con los siguientes parámetros:
 
 En el modo actual (no VeriFactu) el endpoint es `ValidarQRNoVerifactu`. Cuando se active el modo VeriFactu, el endpoint pasa a ser `ValidarQR` y se añade el parámetro `hash` con los 64 caracteres hexadecimales en minúsculas.
 
-La URL base es:
+La constante `VERIFACTU_URL_BASE` en `config.py` almacena únicamente el dominio base:
 
 ```
-https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/
+https://www2.agenciatributaria.gob.es
+```
+
+El módulo `qr.py` añade el segmento de ruta `/wlpl/TIKE-CONT/` y el nombre del endpoint al construir cada URL:
+
+```
+https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQRNoVerifactu?nif=…
+https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR?nif=…&hash=…
 ```
 
 ### Leyenda legal
@@ -78,6 +85,7 @@ La constante `VERIFACTU_MODO_VERIFACTU` en `lefa/config.py` controla el comporta
 
 ```python
 # lefa/config.py
+VERIFACTU_URL_BASE = "https://www2.agenciatributaria.gob.es"
 VERIFACTU_MODO_VERIFACTU = False  # No-Verifactu hasta activar envío a AEAT
 ```
 

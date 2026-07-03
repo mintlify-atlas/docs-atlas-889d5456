@@ -1,6 +1,6 @@
 ---
 title: "Estados y ciclo de vida de facturas y presupuestos"
-sidebarTitle: "Estados y ciclo de vida"
+sidebarTitle: "Ciclo de Vida"
 description: "Referencia completa de los estados de factura (Borrador, Emitida, Cobrada) y presupuesto (Borrador, Emitido, Aceptado, Convertido, Rechazado) en LEFA."
 ---
 
@@ -79,6 +79,8 @@ Los presupuestos siguen un ciclo más amplio, definido por el enumerado `EstadoP
     Pulsa **Convertir en factura** en el listado. LEFA crea un borrador de factura con el mismo cliente, líneas e impuestos, y marca el presupuesto como `CONVERTIDO`. El borrador se abre automáticamente en **Nueva Factura** con todo cargado; solo tienes que revisar y pulsar **Emitir**.
 
     Si el presupuesto aún está en estado `EMITIDO` (no fue aceptado explícitamente), LEFA lo acepta de forma automática antes de convertirlo.
+
+    Un presupuesto en estado `BORRADOR` no puede convertirse: primero debes emitirlo.
   </Step>
 </Steps>
 
@@ -105,4 +107,18 @@ Además del estado de ciclo de vida, cada factura puede tener una **fecha de ven
 
 <Note>
   LEFA no realiza ninguna acción automática cuando una factura vence. Las etiquetas son puramente informativas para que tengas siempre visible qué está pendiente de cobro. Si el vencimiento predeterminado está configurado en **Herramientas → Preferencias…**, LEFA lo aplica automáticamente al emitir (fecha de emisión + días configurados), siempre que la factura no tenga ya una fecha de vencimiento explícita.
+</Note>
+
+## Estado de envío de factura
+
+Cada factura registra si ya se envió por correo. El método `texto_estado_envio()` del modelo `Factura` determina la etiqueta que aparece en la columna **Envío** del listado:
+
+| Situación | Etiqueta mostrada |
+|---|---|
+| Factura en estado `BORRADOR` | `—` |
+| Enviada correctamente | `✓ Enviada (DD/MM/AAAA)` |
+| Emitida o cobrada, aún no enviada | `Pendiente de enviar` |
+
+<Note>
+  El estado de envío se registra en el momento en que LEFA confirma la entrega del correo. Si reenvías la factura, la fecha y el destinatario se actualizan con el último envío exitoso.
 </Note>

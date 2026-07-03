@@ -1,7 +1,7 @@
 ---
-title: "PdfService y PresupuestoPdfService: generación de PDFs en LEFA"
+title: "PDFService: generación de PDFs de facturas en LEFA"
 sidebarTitle: "PDF Service"
-description: "Referencia de PdfService y PresupuestoPdfService en LEFA: generación de PDFs de facturas y presupuestos con FPDF2, QR tributario y logo."
+description: "Referencia de PDFService y PresupuestoPDFService en LEFA: generación de PDFs de facturas y presupuestos con FPDF2, QR tributario y logo."
 ---
 
 LEFA genera documentos PDF de forma nativa usando la biblioteca **FPDF2**, sin dependencias de navegador ni LaTeX. El módulo `PDFService` gestiona los PDFs de facturas —incluyendo el código QR tributario exigido por la normativa VeriFactu— mientras que `PresupuestoPDFService` produce los PDFs de presupuestos, más sencillos al no requerir QR ni registro fiscal. Ambos servicios leen las preferencias del emisor (razón social, CIF, dirección, IBAN, logotipo y pie de página) en tiempo de generación, por lo que cualquier cambio en las preferencias se refleja en el siguiente PDF generado. La generación se delega en hilos de fondo (`pdf_worker.py` y `presupuesto_pdf_worker.py`) para no bloquear la interfaz PyQt6.
@@ -132,12 +132,12 @@ El documento incluye:
 
 Para no bloquear la interfaz de usuario PyQt6, la generación de PDF se ejecuta siempre en un hilo secundario mediante dos workers dedicados:
 
-| Worker | Servicio que invoca | Señal de finalización |
-|---|---|---|
-| `pdf_worker.py` | `PDFService.generar` | `pdf_generado` (emite la `Path` del archivo) |
-| `presupuesto_pdf_worker.py` | `PresupuestoPDFService.generar` | `pdf_generado` (emite la `Path` del archivo) |
+| Clase worker | Servicio que invoca | `finished_ok` emite | `finished_error` emite |
+|---|---|---|---|
+| `PDFWorker` | `PDFService.generar` | `dict` con claves `pdf` (`Path`) y `xml` (`Path` o `None`) | `str` con el mensaje de error |
+| `PresupuestoPDFWorker` | `PresupuestoPDFService.generar` | `Path` del PDF generado | `str` con el mensaje de error |
 
-Los workers heredan de `QThread` y emiten señales Qt para notificar a la ventana principal cuando el PDF está listo o cuando se produce un error, permitiendo abrir el visor del sistema operativo de forma automática tras la generación.
+Ambos workers heredan de `QThread` y emiten la señal `finished_ok` cuando la generación concluye con éxito, o `finished_error` si se produce una excepción. La ventana principal conecta estas señales para abrir el visor del sistema operativo de forma automática tras la generación.
 
 ---
 

@@ -1,7 +1,7 @@
 ---
-title: "Crear y gestionar facturas en LEFA"
+title: "Crear borradores, emitir y rectificar facturas en LEFA"
 sidebarTitle: "Facturas"
-description: "Aprende a crear borradores, emitir, duplicar y rectificar facturas en LEFA, con numeración correlativa y generación automática de PDF y XML."
+description: "Aprende a crear borradores, emitir, duplicar y rectificar facturas en LEFA, con numeración correlativa y generación automática de PDF y XML Facturae."
 ---
 
 LEFA centraliza todo el flujo de facturación en la pestaña **Nueva Factura** y el **Listado**. Un borrador se puede editar libremente hasta que pulses **Emitir Factura**, momento en que se asigna el número oficial, se generan el PDF y el XML Facturae, y se crea el registro VeriFactu encadenado, todo dentro de una única transacción atómica en SQLite. A partir de ese instante la factura queda bloqueada y solo puede corregirse mediante una factura rectificativa.
@@ -114,16 +114,16 @@ Las rectificativas permiten corregir o anular una factura ya emitida manteniendo
 
 ## Vencimientos
 
-Cada factura puede llevar una **fecha de vencimiento**. En el **Listado**, la columna de vencimiento muestra una etiqueta de estado calculada en tiempo real, sin ningún automatismo ni aviso emergente:
+Cada factura puede llevar una **fecha de vencimiento**. En el **Listado**, la columna de vencimiento muestra una etiqueta de estado calculada en tiempo real por `texto_estado_vencimiento()`, sin ningún automatismo ni aviso emergente:
 
 | Etiqueta | Condición |
 |----------|-----------|
 | **—** | La factura es un borrador. |
-| **Pendiente** | Emitida sin fecha de vencimiento asignada, o con vencimiento a más de 5 días. |
-| **Vence en N días** | Quedan 1 a 5 días para el vencimiento. |
-| **Vence hoy** | La fecha de vencimiento es hoy. |
-| **Vencida** | La fecha de vencimiento ya pasó y la factura sigue emitida. |
 | **Cobrada** | La factura está en estado Cobrada, independientemente de la fecha. |
+| **Pendiente** | Emitida sin fecha de vencimiento asignada, o con vencimiento a más de 5 días vista. |
+| **Vencida** | La fecha de vencimiento ya pasó y la factura sigue emitida. |
+| **Vence hoy** | La fecha de vencimiento es hoy mismo. |
+| **Vence en N días** | Quedan entre 1 y 5 días para el vencimiento (N puede ser 1 a 5). |
 
 <Tip>
   Para configurar el número de días de vencimiento por defecto, ve a **Herramientas → Preferencias** y ajusta el campo **Vencimiento por defecto**.

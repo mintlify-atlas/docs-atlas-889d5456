@@ -1,7 +1,7 @@
 ---
-title: "Constantes y rutas de configuración de LEFA"
-sidebarTitle: "Constantes"
-description: "Referencia de las constantes, rutas de datos y valores por defecto definidos en config.py de LEFA: directorios, tipos de IVA, series y keyring."
+title: "Constantes, rutas y configuración centralizada de LEFA"
+sidebarTitle: "Configuración"
+description: "Referencia completa de constantes, rutas de datos, tipos impositivos, series y función ensure_directories() definidos en lefa/config.py."
 ---
 
 El archivo `lefa/config.py` es el único punto de verdad para todas las rutas de datos locales y los valores constantes de la aplicación. Cualquier otro módulo que necesite una ruta, un tipo impositivo o una serie de facturación lo importa directamente desde aquí; nunca se repiten literales en el resto del código.
@@ -162,7 +162,7 @@ La contraseña SMTP se almacena en el llavero del sistema operativo (GNOME Keyri
 
 ## Función `ensure_directories()`
 
-`ensure_directories()` se invoca automáticamente al arrancar LEFA (antes de mostrar la interfaz) y garantiza que todas las carpetas de datos existan. Es idempotente: si los directorios ya existen, no hace nada.
+`ensure_directories()` crea las carpetas de datos necesarias si no existen. Es idempotente: si los directorios ya existen, no hace nada. Se invoca desde `PreferenciasService` (en `cargar()` y `guardar()`) cada vez que se accede o persisten las preferencias, lo que garantiza que las carpetas estén disponibles antes de cualquier operación de escritura.
 
 ```python
 def ensure_directories() -> None:
@@ -174,7 +174,7 @@ def ensure_directories() -> None:
     FACTURAE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 ```
 
-Los directorios creados son `~/.lefa`, `~/.lefa/facturas_pdf`, `~/.lefa/presupuestos_pdf`, `~/.lefa/verifactu/registros` y `~/.lefa/facturas_xml`. La carpeta `~/.lefa/smtp_config.json` y `~/.lefa/preferencias.json` son archivos, no directorios, por lo que su carpeta padre (`APP_DATA_DIR`) ya queda cubierta por la primera llamada.
+Los directorios creados son `~/.lefa`, `~/.lefa/facturas_pdf`, `~/.lefa/presupuestos_pdf`, `~/.lefa/verifactu/registros` y `~/.lefa/facturas_xml`. Los archivos `smtp_config.json` y `preferencias.json` residen directamente en `APP_DATA_DIR`, cuya creación ya queda cubierta por la primera llamada a `mkdir`.
 
 ---
 
@@ -184,18 +184,18 @@ Los directorios creados son `~/.lefa`, `~/.lefa/facturas_pdf`, `~/.lefa/presupue
 
 ### Formatos disponibles
 
-El diccionario `FORMATOS_NUMERACION` asocia cada identificador con una plantilla de marcadores (`{serie}`, `{anio}`, `{seq}`):
+El diccionario `FORMATOS_NUMERACION` asocia cada identificador con una plantilla de marcadores (`{serie}`, `{anio}`, `{seq}`). La columna «Etiqueta» reproduce literalmente los valores de `ETIQUETAS_FORMATO`, que son las cadenas que se muestran en la interfaz y que utilizan distintos anchos de secuencia a modo ilustrativo. El ancho real en producción se controla con `digitos_secuencia` en las preferencias (por defecto `4`).
 
-| `formato_id` | Plantilla | Ejemplo con serie `FACT`, año `2026`, seq `1` |
+| `formato_id` | Plantilla | Etiqueta (`ETIQUETAS_FORMATO`) |
 |---|---|---|
-| `fact_anio_4` | `{serie}-{anio}-{seq}` | `FACT-2026-0001` |
+| `fact_anio_4` | `{serie}-{anio}-{seq}` | `FACT-2026-0001 (serie-año-4 dígitos)` |
 | `anio_3` | `{anio}-{seq}` | `2026-001` |
 | `serie_anio_3` | `{serie}-{anio}-{seq}` | `F-2026-001` |
 | `serie_anio_compact` | `{serie}{anio}-{seq}` | `FAC2026-001` |
 | `seq4_anio` | `{seq}/{anio}` | `0001/2026` |
-| `serie_seq3` | `{serie}-{seq}` | `WEB-001` |
+| `serie_seq3` | `{serie}-{seq}` | `WEB-001 (serie sin año)` |
 
-El número de dígitos del campo `{seq}` se controla con la preferencia `digitos_secuencia` (por defecto `4`). El valor por defecto de `formato_numeracion` es `"fact_anio_4"`.
+El valor por defecto de `formato_numeracion` es `"fact_anio_4"`.
 
 <Note>
   Los formatos que no incluyen `{anio}` (por ejemplo `serie_seq3`) mantienen un correlativo continuo sin reiniciarse al cambiar de ejercicio. Los formatos que no incluyen `{serie}` comparten correlativo entre todas las series.
